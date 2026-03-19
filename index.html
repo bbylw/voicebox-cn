@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Voicebox - 开源语音克隆工作室</title>
+    <meta name="description" content="开源语音克隆工作室，支持多种 TTS 引擎。克隆任意声音，生成自然语音，创作多声音项目——全部在本地运行。" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,400&display=swap" rel="stylesheet" />
+    <style>
+      *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+      :root {
+        --bg: #09090b;
+        --bg-elevated: #111113;
+        --bg-card: #18181b;
+        --border: rgba(255,255,255,.06);
+        --border-hover: rgba(255,255,255,.12);
+        --text: #fafafa;
+        --text-secondary: #a1a1aa;
+        --text-muted: #71717a;
+        --accent: #a78bfa;
+        --accent-dim: rgba(167,139,250,.12);
+        --green: #4ade80;
+        --green-dim: rgba(74,222,128,.12);
+        --blue: #60a5fa;
+        --blue-dim: rgba(96,165,250,.12);
+        --orange: #fb923c;
+        --orange-dim: rgba(251,146,60,.12);
+        --cyan: #22d3ee;
+        --cyan-dim: rgba(34,211,238,.12);
+        --radius: 12px;
+        --radius-lg: 16px;
+        --radius-xl: 20px;
+      }
+      html { scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: #27272a #09090b; }
+      body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+      h1, h2, h3, h4, h5 { font-family: 'Space Grotesk', sans-serif; line-height: 1.15; }
+      a { color: inherit; text-decoration: none; }
+
+      /* ---- NAV ---- */
+      .nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; backdrop-filter: blur(16px) saturate(1.4); background: rgba(9,9,11,.72); border-bottom: 1px solid var(--border); }
+      .nav-inner { max-width: 1140px; margin: 0 auto; padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between; }
+      .nav-logo { display: flex; align-items: center; gap: 10px; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 1.15rem; }
+      .nav-logo svg { width: 28px; height: 28px; color: var(--accent); }
+      .nav-links { display: flex; align-items: center; gap: 28px; }
+      .nav-links a { font-size: .875rem; color: var(--text-muted); transition: color .2s; }
+      .nav-links a:hover { color: var(--text); }
+      .nav-cta { display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; border-radius: 8px; font-size: .8125rem; font-weight: 600; background: var(--text); color: var(--bg); transition: opacity .2s; }
+      .nav-cta:hover { opacity: .88; }
+      .nav-star { display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; border-radius: 8px; font-size: .8125rem; font-weight: 500; border: 1px solid var(--border); color: var(--text-secondary); transition: border-color .2s, color .2s; }
+      .nav-star:hover { border-color: var(--border-hover); color: var(--text); }
+      .nav-star svg { width: 16px; height: 16px; }
+      .nav-right { display: flex; align-items: center; gap: 10px; }
+      .mobile-menu-btn { display: none; background: none; border: none; color: var(--text); cursor: pointer; padding: 4px; }
+      @media (max-width: 768px) {
+        .nav-links { display: none; }
+        .nav-right .nav-star { display: none; }
+        .mobile-menu-btn { display: block; }
+      }
+
+      /* ---- HERO ---- */
+      .hero { position: relative; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 120px 24px 80px; overflow: hidden; }
+      .hero-glow { position: absolute; top: -30%; left: 50%; transform: translateX(-50%); width: 800px; height: 600px; background: radial-gradient(ellipse, rgba(167,139,250,.10) 0%, transparent 70%); pointer-events: none; }
+      .hero-badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border); font-size: .8125rem; color: var(--text-secondary); margin-bottom: 28px; }
+      .hero-badge span { font-family: 'Space Grotesk', sans-serif; font-weight: 500; }
+      .hero h1 { font-size: clamp(2.5rem, 6vw, 4.25rem); text-align: center; max-width: 780px; letter-spacing: -.03em; margin-bottom: 20px; }
+      .hero-sub { text-align: center; max-width: 600px; font-size: 1.125rem; color: var(--text-secondary); margin-bottom: 36px; line-height: 1.7; }
+      .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-bottom: 12px; }
+      .btn-primary { display: inline-flex; align-items: center; gap: 8px; padding: 12px 28px; border-radius: 10px; font-weight: 600; font-size: .9375rem; background: var(--text); color: var(--bg); transition: opacity .2s; font-family: 'Space Grotesk', sans-serif; }
+      .btn-primary:hover { opacity: .88; }
+      .btn-secondary { display: inline-flex; align-items: center; gap: 8px; padding: 12px 28px; border-radius: 10px; font-weight: 500; font-size: .9375rem; border: 1px solid var(--border); color: var(--text-secondary); transition: border-color .2s, color .2s; font-family: 'Space Grotesk', sans-serif; }
+      .btn-secondary:hover { border-color: var(--border-hover); color: var(--text); }
+      .hero-platforms { font-size: .8125rem; color: var(--text-muted); margin-bottom: 48px; }
+
+      /* ---- APP PREVIEW ---- */
+      .app-preview { position: relative; width: 100%; max-width: 960px; margin: 0 auto; border-radius: var(--radius-xl); border: 1px solid var(--border); background: var(--bg-elevated); overflow: hidden; box-shadow: 0 0 80px rgba(167,139,250,.06), 0 40px 80px rgba(0,0,0,.4); }
+      .app-titlebar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: rgba(0,0,0,.25); }
+      .app-dot { width: 12px; height: 12px; border-radius: 50%; }
+      .app-dot.r { background: #ff5f57; }
+      .app-dot.y { background: #febc2e; }
+      .app-dot.g { background: #28c840; }
+      .app-titlebar span { flex: 1; text-align: center; font-size: .75rem; color: var(--text-muted); font-family: 'Space Grotesk'; }
+      .app-body { display: grid; grid-template-columns: 220px 1fr; min-height: 420px; }
+      @media (max-width: 768px) { .app-body { grid-template-columns: 1fr; } .app-sidebar { display: none; } }
+      .app-sidebar { border-right: 1px solid var(--border); padding: 16px 12px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+      .sidebar-header { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; margin-bottom: 8px; }
+      .sidebar-header span { font-size: .8125rem; font-weight: 600; color: var(--text-secondary); font-family: 'Space Grotesk'; }
+      .sidebar-actions { display: flex; gap: 4px; }
+      .sidebar-actions button { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: .6875rem; color: var(--text-muted); cursor: pointer; font-family: 'DM Sans'; transition: border-color .2s; }
+      .sidebar-actions button:hover { border-color: var(--border-hover); color: var(--text-secondary); }
+      .voice-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; transition: background .15s; }
+      .voice-item:hover { background: rgba(255,255,255,.04); }
+      .voice-item.active { background: var(--accent-dim); }
+      .voice-avatar { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 600; flex-shrink: 0; color: #fff; }
+      .voice-info { min-width: 0; }
+      .voice-name { font-size: .8125rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .voice-desc { font-size: .6875rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .voice-lang { font-size: .625rem; padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,.06); color: var(--text-muted); margin-left: auto; flex-shrink: 0; }
+
+      .app-main { display: flex; flex-direction: column; }
+      .app-input-area { padding: 20px; border-bottom: 1px solid var(--border); }
+      .app-input { width: 100%; background: rgba(255,255,255,.04); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; color: var(--text); font-size: .875rem; resize: none; outline: none; font-family: 'DM Sans'; transition: border-color .2s; min-height: 44px; }
+      .app-input:focus { border-color: var(--accent); }
+      .app-input::placeholder { color: var(--text-muted); }
+      .input-controls { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; gap: 8px; flex-wrap: wrap; }
+      .engine-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+      .engine-pill { padding: 4px 10px; border-radius: 6px; font-size: .6875rem; font-weight: 500; border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; transition: all .15s; font-family: 'Space Grotesk'; }
+      .engine-pill.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+      .gen-list { flex: 1; padding: 12px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+      .gen-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); transition: border-color .15s; }
+      .gen-item:hover { border-color: var(--border-hover); }
+      .gen-avatar { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 600; flex-shrink: 0; color: #fff; }
+      .gen-meta { flex: 1; min-width: 0; }
+      .gen-meta-top { display: flex; align-items: center; gap: 8px; }
+      .gen-meta-name { font-size: .8125rem; font-weight: 600; }
+      .gen-meta-tags { display: flex; gap: 4px; }
+      .gen-meta-tags span { font-size: .625rem; padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,.06); color: var(--text-muted); }
+      .gen-meta-text { font-size: .75rem; color: var(--text-muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .gen-time { font-size: .6875rem; color: var(--text-muted); flex-shrink: 0; }
+      .gen-play { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border); background: none; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; transition: all .15s; }
+      .gen-play:hover { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+
+      /* ---- SECTIONS ---- */
+      .section { padding: 100px 24px; max-width: 1140px; margin: 0 auto; }
+      .section-divider { border: none; border-top: 1px solid var(--border); max-width: 1140px; margin: 0 auto; }
+      .section-label { font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .1em; color: var(--accent); margin-bottom: 12px; font-family: 'Space Grotesk'; }
+      .section-title { font-size: clamp(1.75rem, 4vw, 2.75rem); letter-spacing: -.025em; margin-bottom: 16px; }
+      .section-desc { font-size: 1.0625rem; color: var(--text-secondary); max-width: 600px; line-height: 1.7; }
+
+      /* ---- FEATURES GRID ---- */
+      .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 48px; }
+      @media (max-width: 900px) { .features-grid { grid-template-columns: repeat(2, 1fr); } }
+      @media (max-width: 600px) { .features-grid { grid-template-columns: 1fr; } }
+      .feature-card { padding: 28px; border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--bg-elevated); transition: border-color .2s, transform .2s; }
+      .feature-card:hover { border-color: var(--border-hover); transform: translateY(-2px); }
+      .feature-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
+      .feature-card h3 { font-size: 1rem; margin-bottom: 8px; }
+      .feature-card p { font-size: .875rem; color: var(--text-secondary); line-height: 1.65; }
+
+      /* ---- VOICE CLONE SECTION ---- */
+      .clone-methods { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 48px; }
+      @media (max-width: 768px) { .clone-methods { grid-template-columns: 1fr; } }
+      .clone-card { padding: 32px 24px; border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--bg-elevated); text-align: center; transition: border-color .2s; }
+      .clone-card:hover { border-color: var(--border-hover); }
+      .clone-icon { width: 56px; height: 56px; border-radius: 14px; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; }
+      .clone-card h3 { font-size: 1rem; margin-bottom: 8px; }
+      .clone-card p { font-size: .8125rem; color: var(--text-secondary); line-height: 1.6; }
+
+      /* ---- ENGINES SECTION ---- */
+      .engines-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 48px; }
+      @media (max-width: 768px) { .engines-grid { grid-template-columns: 1fr; } }
+      .engine-card { padding: 28px; border-radius: var(--radius-lg); border: 1px solid var(--border); background: var(--bg-elevated); transition: border-color .2s; }
+      .engine-card:hover { border-color: var(--border-hover); }
+      .engine-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+      .engine-card h3 { font-size: 1.125rem; }
+      .engine-card .by { font-size: .75rem; color: var(--text-muted); }
+      .engine-card .model-sizes { display: flex; gap: 4px; }
+      .engine-card .model-sizes span { font-size: .6875rem; padding: 2px 8px; border-radius: 5px; background: rgba(255,255,255,.06); color: var(--text-muted); font-family: 'Space Grotesk'; font-weight: 500; }
+      .engine-card .desc { font-size: .875rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 14px; }
+      .engine-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+      .engine-tag { font-size: .6875rem; padding: 3px 10px; border-radius: 6px; font-weight: 500; font-family: 'Space Grotesk'; }
+
+      /* ---- DOWNLOAD ---- */
+      .download-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 48px; max-width: 560px; }
+      @media (max-width: 500px) { .download-grid { grid-template-columns: 1fr; } }
+      .download-card { display: flex; align-items: center; gap: 14px; padding: 16px 20px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-elevated); transition: border-color .2s, background .2s; cursor: pointer; }
+      .download-card:hover { border-color: var(--border-hover); background: var(--bg-card); }
+      .download-card .dl-icon { font-size: 1.5rem; }
+      .download-card .dl-info { }
+      .download-card .dl-name { font-size: .875rem; font-weight: 600; font-family: 'Space Grotesk'; }
+      .download-card .dl-detail { font-size: .75rem; color: var(--text-muted); }
+      .download-card .dl-arrow { margin-left: auto; color: var(--text-muted); }
+
+      /* ---- FOOTER ---- */
+      .footer { border-top: 1px solid var(--border); padding: 48px 24px; }
+      .footer-inner { max-width: 1140px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 48px; justify-content: space-between; }
+      .footer-brand { max-width: 280px; }
+      .footer-brand .logo { display: flex; align-items: center; gap: 8px; font-family: 'Space Grotesk'; font-weight: 700; font-size: 1rem; margin-bottom: 10px; }
+      .footer-brand .logo svg { width: 22px; height: 22px; color: var(--accent); }
+      .footer-brand p { font-size: .8125rem; color: var(--text-muted); line-height: 1.6; }
+      .footer-col h4 { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-bottom: 14px; font-family: 'Space Grotesk'; font-weight: 600; }
+      .footer-col a { display: block; font-size: .8125rem; color: var(--text-secondary); padding: 4px 0; transition: color .2s; }
+      .footer-col a:hover { color: var(--text); }
+      .footer-bottom { max-width: 1140px; margin: 0 auto; padding-top: 28px; margin-top: 28px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-size: .75rem; color: var(--text-muted); }
+
+      /* ---- MARQUEE ---- */
+      .voice-marquee { overflow: hidden; position: relative; }
+      .voice-marquee::before, .voice-marquee::after { content: ''; position: absolute; top: 0; width: 80px; height: 100%; z-index: 2; pointer-events: none; }
+      .voice-marquee::before { left: 0; background: linear-gradient(90deg, var(--bg), transparent); }
+      .voice-marquee::after { right: 0; background: linear-gradient(-90deg, var(--bg), transparent); }
+      .marquee-track { display: flex; gap: 12px; animation: scroll-left 40s linear infinite; width: max-content; }
+      @keyframes scroll-left { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+      .marquee-card { flex-shrink: 0; width: 200px; padding: 14px 16px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-elevated); display: flex; align-items: center; gap: 10px; }
+      .marquee-card .mc-avatar { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 600; color: #fff; flex-shrink: 0; }
+      .marquee-card .mc-name { font-size: .8125rem; font-weight: 500; }
+      .marquee-card .mc-desc { font-size: .6875rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+      /* ---- PLAYER BAR ---- */
+      .player-bar { position: relative; margin-top: 32px; max-width: 960px; margin-left: auto; margin-right: auto; padding: 14px 20px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-elevated); display: flex; align-items: center; gap: 14px; }
+      .player-wave { flex: 1; height: 32px; position: relative; overflow: hidden; }
+      .wave-bars { display: flex; align-items: center; gap: 2px; height: 100%; }
+      .wave-bar { width: 3px; border-radius: 2px; background: var(--accent); opacity: .5; }
+
+      /* ---- SCROLL ANIMATION ---- */
+      .fade-up { opacity: 0; transform: translateY(24px); transition: opacity .6s ease, transform .6s ease; }
+      .fade-up.visible { opacity: 1; transform: translateY(0); }
+    </style>
+  </head>
+  <body>
+    <!-- NAV -->
+    <nav class="nav">
+      <div class="nav-inner">
+        <a href="#" class="nav-logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+          Voicebox
+        </a>
+        <div class="nav-links">
+          <a href="#features">功能</a>
+          <a href="#about">关于</a>
+          <a href="#download">下载</a>
+          <a href="https://docs.voicebox.sh" target="_blank">文档</a>
+        </div>
+        <div class="nav-right">
+          <a href="https://github.com/jamiepine/voicebox" target="_blank" class="nav-star">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            Star
+          </a>
+          <a href="#download" class="nav-cta">下载</a>
+          <button class="mobile-menu-btn" aria-label="菜单">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <main>
+      <!-- HERO -->
+      <section class="hero">
+        <div class="hero-glow"></div>
+        <div class="hero-badge">
+          <span style="color:var(--green);">●</span>
+          <span>v0.3.0</span>
+        </div>
+        <h1>你的声音，你的机器。</h1>
+        <p class="hero-sub">开源语音克隆工作室，支持多种 TTS 引擎。克隆任意声音、生成自然语音、创作多声音项目——全部在本地运行。</p>
+        <div class="hero-actions">
+          <a href="#download" class="btn-primary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+            下载
+          </a>
+          <a href="https://github.com/jamiepine/voicebox" target="_blank" class="btn-secondary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+            在 GitHub 上查看
+          </a>
+        </div>
+        <p class="hero-platforms">macOS、Windows、Linux</p>
+
+        <!-- APP PREVIEW -->
+        <div class="app-preview fade-up">
+          <div class="app-titlebar">
+            <div class="app-dot r"></div>
+            <div class="app-dot y"></div>
+            <div class="app-dot g"></div>
+            <span>Voicebox</span>
+          </div>
+          <div class="app-body">
+            <div class="app-sidebar">
+              <div class="sidebar-header">
+                <span>声音配置</span>
+                <div class="sidebar-actions">
+                  <button>导入</button>
+                  <button>创建</button>
+                </div>
+              </div>
+              <div class="voice-item active">
+                <div class="voice-avatar" style="background:linear-gradient(135deg,#6366f1,#8b5cf6);">J</div>
+                <div class="voice-info">
+                  <div class="voice-name">Jarvis</div>
+                  <div class="voice-desc">沉稳英式 AI 助手</div>
+                </div>
+                <span class="voice-lang">en</span>
+              </div>
+              <div class="voice-item">
+                <div class="voice-avatar" style="background:linear-gradient(135deg,#f59e0b,#ef4444);">M</div>
+                <div class="voice-info">
+                  <div class="voice-name">Morgan Freeman</div>
+                  <div class="voice-desc">温暖浑厚的男中音</div>
+                </div>
+                <span class="voice-lang">en</span>
+              </div>
+              <div class="voice-item">
+                <div class="voice-avatar" style="background:linear-gradient(135deg,#10b981,#06b6d4);">B</div>
+                <div class="voice-info">
+                  <div class="voice-name">Bob Ross</div>
+                  <div class="voice-desc">轻柔、令人安心</div>
+                </div>
+                <span class="voice-lang">en</span>
+              </div>
+              <div class="voice-item">
+                <div class="voice-avatar" style="background:linear-gradient(135deg,#ec4899,#f43f5e);">S</div>
+                <div class="voice-info">
+                  <div class="voice-name">Scarlett Johansson</div>
+                  <div class="voice-desc">柔和低沉的女中音</div>
+                </div>
+                <span class="voice-lang">en</span>
+              </div>
+              <div class="voice-item">
+                <div class="voice-avatar" style="background:linear-gradient(135deg,#3b82f6,#6366f1);">D</div>
+                <div class="voice-info">
+                  <div class="voice-name">David Attenborough</div>
+                  <div class="voice-desc">温暖而充满敬意的叙述</div>
+                </div>
+                <span class="voice-lang">en</span>
+              </div>
+              <div class="voice-item">
+                <div class="voice-avatar" style="background:linear-gradient(135deg,#f97316,#eab308);">L</div>
+                <div class="voice-info">
+                  <div class="voice-name">Linus Tech Tips</div>
+                  <div class="voice-desc">充满活力的科技解说</div>
+                </div>
+                <span class="voice-lang">en</span>
+              </div>
+            </div>
+            <div class="app-main">
+              <div class="app-input-area">
+                <textarea class="app-input" placeholder="使用 Jarvis 的声音生成语音..." rows="1" readonly></textarea>
+                <div class="input-controls">
+                  <div class="engine-pills">
+                    <span class="engine-pill">English</span>
+                    <span class="engine-pill active">Qwen 1.7B</span>
+                    <span class="engine-pill">Robot</span>
+                  </div>
+                </div>
+              </div>
+              <div class="gen-list">
+                <div class="gen-item">
+                  <div class="gen-avatar" style="background:linear-gradient(135deg,#f59e0b,#ef4444);">M</div>
+                  <div class="gen-meta">
+                    <div class="gen-meta-top">
+                      <span class="gen-meta-name">Morgan Freeman</span>
+                      <div class="gen-meta-tags"><span>en</span><span>Qwen 1.7B</span><span>0:08</span></div>
+                    </div>
+                    <div class="gen-meta-text">人类语音的神经通路蕴含着比任何语言模型都更复杂的信息，但我们仍在不断突破可能性的边界。</div>
+                  </div>
+                  <span class="gen-time">2 分钟前</span>
+                  <button class="gen-play" aria-label="播放"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
+                </div>
+                <div class="gen-item">
+                  <div class="gen-avatar" style="background:linear-gradient(135deg,#6366f1,#8b5cf6);">J</div>
+                  <div class="gen-meta">
+                    <div class="gen-meta-top">
+                      <span class="gen-meta-name">Jarvis</span>
+                      <div class="gen-meta-tags"><span>en</span><span>Qwen 0.6B</span><span>0:09</span></div>
+                    </div>
+                    <div class="gen-meta-text">现代文本转语音系统的架构揭示了 Transformer 模型与声学特征预测之间优雅的交互。</div>
+                  </div>
+                  <span class="gen-time">1 小时前</span>
+                  <button class="gen-play" aria-label="播放"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
+                </div>
+                <div class="gen-item">
+                  <div class="gen-avatar" style="background:linear-gradient(135deg,#10b981,#06b6d4);">B</div>
+                  <div class="gen-meta">
+                    <div class="gen-meta-top">
+                      <span class="gen-meta-name">Bob Ross</span>
+                      <div class="gen-meta-tags"><span>en</span><span>Chatterbox</span><span>0:06</span></div>
+                    </div>
+                    <div class="gen-meta-text">欢迎来到新篇章。每个伟大的故事都始于一个声音，而今天这个声音可以是你的。</div>
+                  </div>
+                  <span class="gen-time">3 小时前</span>
+                  <button class="gen-play" aria-label="播放"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
+                </div>
+                <div class="gen-item">
+                  <div class="gen-avatar" style="background:linear-gradient(135deg,#f97316,#eab308);">L</div>
+                  <div class="gen-meta">
+                    <div class="gen-meta-top">
+                      <span class="gen-meta-name">Linus Tech Tips</span>
+                      <div class="gen-meta-tags"><span>en</span><span>Qwen 1.7B</span><span>0:05</span></div>
+                    </div>
+                    <div class="gen-meta-text">本地推理让你对语音数据拥有完全控制。没有云端，没有订阅，没有妥协。</div>
+                  </div>
+                  <span class="gen-time">5 小时前</span>
+                  <button class="gen-play" aria-label="播放"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PLAYER BAR -->
+        <div class="player-bar fade-up">
+          <button class="gen-play" aria-label="播放"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
+          <span style="font-size:.8125rem;font-weight:500;">Jarvis</span>
+          <div class="player-wave">
+            <div class="wave-bars" id="waveBars"></div>
+          </div>
+          <span style="font-size:.75rem;color:var(--text-muted);">0:00 / 0:09</span>
+        </div>
+      </section>
+
+      <!-- VOICE MARQUEE -->
+      <div class="voice-marquee" style="padding:24px 0;">
+        <div class="marquee-track" id="marqueeTrack"></div>
+      </div>
+
+      <hr class="section-divider" />
+
+      <!-- FEATURES -->
+      <section id="features" class="section">
+        <div class="fade-up">
+          <p class="section-label">专业级语音工具，零妥协</p>
+          <h2 class="section-title">克隆声音、生成语音、制作多声音内容<br>全部在你的机器上运行。</h2>
+        </div>
+        <div class="features-grid">
+          <div class="feature-card fade-up">
+            <div class="feature-icon" style="background:var(--accent-dim);">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+            </div>
+            <h3>近乎完美的声音克隆</h3>
+            <p>多种 TTS 引擎提供卓越的语音质量。仅需几秒钟音频即可克隆任意声音，保留自然的语调和情感。</p>
+          </div>
+          <div class="feature-card fade-up">
+            <div class="feature-icon" style="background:var(--blue-dim);">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+            </div>
+            <h3>故事编辑器</h3>
+            <p>基于时间线的多声音叙事编辑器。安排轨道、修剪片段、混合不同角色之间的对话。</p>
+          </div>
+          <div class="feature-card fade-up">
+            <div class="feature-icon" style="background:var(--orange-dim);">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--orange)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </div>
+            <h3>音频效果管线</h3>
+            <p>应用变调、混响、延迟、压缩等效果——保存为预设。实时预览效果并为每个声音配置文件设置默认值。</p>
+          </div>
+          <div class="feature-card fade-up">
+            <div class="feature-icon" style="background:var(--green-dim);">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.66 0 3-4.03 3-9s-1.34-9-3-9m0 18c-1.66 0-3-4.03-3-9s1.34-9 3-9m-9 9a9 9 0 0 1 9-9"/></svg>
+            </div>
+            <h3>本地或远程</h3>
+            <p>使用 Metal、CUDA、ROCm、Intel Arc 或 DirectML 在本地运行推理——或连接远程机器。一键服务器设置加自动发现。</p>
+          </div>
+          <div class="feature-card fade-up">
+            <div class="feature-icon" style="background:var(--cyan-dim);">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="2"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2v5Z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg>
+            </div>
+            <h3>音频转录</h3>
+            <p>由 Whisper 提供准确的语音转文本。自动从语音样本中提取参考文本。</p>
+          </div>
+          <div class="feature-card fade-up">
+            <div class="feature-icon" style="background:rgba(244,63,94,.12);">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" stroke-width="2"><path d="M4 7V4a2 2 0 0 1 2-2h8.5L20 7.5V20a2 2 0 0 1-2 2H4"/><polyline points="14 2 14 8 20 8"/><path d="M2 15h10"/><path d="M5 12l-3 3 3 3"/></svg>
+            </div>
+            <h3>无限生成长度</h3>
+            <p>一次生成最多 50,000 字符。文本在句子边界自动分割、逐块生成并无缝交叉淡入淡出。</p>
+          </div>
+        </div>
+      </section>
+
+      <hr class="section-divider" />
+
+      <!-- VOICE CLONE -->
+      <section id="about" class="section">
+        <div class="fade-up">
+          <p class="section-label">声音克隆</p>
+          <h2 class="section-title">秒级克隆任意声音</h2>
+          <p class="section-desc">三种捕获声音样本的方式。上传片段、使用麦克风录制、或捕获系统正在播放的音频。Voicebox 仅需 3 秒音频即可克隆声音。</p>
+        </div>
+        <div class="clone-methods">
+          <div class="clone-card fade-up">
+            <div class="clone-icon" style="background:var(--accent-dim);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+            </div>
+            <h3>上传音频</h3>
+            <p>拖放任意音频文件——WAV、MP3、FLAC 或 WebM。</p>
+          </div>
+          <div class="clone-card fade-up">
+            <div class="clone-icon" style="background:var(--green-dim);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+            </div>
+            <h3>麦克风录制</h3>
+            <p>录制时实时波形预览。最长可录 30 秒。</p>
+          </div>
+          <div class="clone-card fade-up">
+            <div class="clone-icon" style="background:var(--blue-dim);">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+            </div>
+            <h3>系统音频捕获</h3>
+            <p>从 YouTube 视频、播客或任何正在播放音频的应用中克隆声音。</p>
+          </div>
+        </div>
+      </section>
+
+      <hr class="section-divider" />
+
+      <!-- ENGINES -->
+      <section class="section">
+        <div class="fade-up">
+          <p class="section-label">多引擎架构</p>
+          <h2 class="section-title">为每项任务选择合适的模型</h2>
+          <p class="section-desc">所有模型均在本地硬件上运行——下载一次，永久使用。</p>
+        </div>
+        <div class="engines-grid">
+          <div class="engine-card fade-up">
+            <div class="engine-card-header">
+              <div>
+                <h3>Qwen3-TTS</h3>
+                <span class="by">by 阿里巴巴</span>
+              </div>
+              <div class="model-sizes"><span>1.7B</span><span>0.6B</span></div>
+            </div>
+            <p class="desc">高质量多语言语音克隆，自然韵律。唯一支持传递指令的引擎——使用自然语言控制语调、节奏和情感。</p>
+            <div class="engine-tags">
+              <span class="engine-tag" style="background:var(--blue-dim);color:var(--blue);">10 种语言</span>
+              <span class="engine-tag" style="background:var(--accent-dim);color:var(--accent);">传递指令</span>
+            </div>
+          </div>
+          <div class="engine-card fade-up">
+            <div class="engine-card-header">
+              <div>
+                <h3>Chatterbox</h3>
+                <span class="by">by Resemble AI</span>
+              </div>
+            </div>
+            <p class="desc">生产级语音克隆，最广泛的语言支持。23 种语言零样本克隆，情感夸张控制。</p>
+            <div class="engine-tags">
+              <span class="engine-tag" style="background:var(--green-dim);color:var(--green);">23 种语言</span>
+            </div>
+          </div>
+          <div class="engine-card fade-up">
+            <div class="engine-card-header">
+              <div>
+                <h3>Chatterbox Turbo</h3>
+                <span class="by">by Resemble AI</span>
+              </div>
+              <div class="model-sizes"><span>350M</span></div>
+            </div>
+            <p class="desc">轻量快速。支持副语言标签——在文本中嵌入 [laugh]、[sigh]、[gasp] 等，生成富有表现力的自然语音。</p>
+            <div class="engine-tags">
+              <span class="engine-tag" style="background:var(--orange-dim);color:var(--orange);">350M 参数</span>
+              <span class="engine-tag" style="background:rgba(244,63,94,.12);color:#f43f5e;">[laugh] [sigh] 标签</span>
+            </div>
+          </div>
+          <div class="engine-card fade-up">
+            <div class="engine-card-header">
+              <div>
+                <h3>LuxTTS</h3>
+                <span class="by">by ZipVoice</span>
+              </div>
+            </div>
+            <p class="desc">超快速、CPU 友好的 48kHz 语音克隆。约 1GB VRAM，CPU 上超过 150 倍实时速度。迭代最快的引擎。</p>
+            <div class="engine-tags">
+              <span class="engine-tag" style="background:var(--cyan-dim);color:var(--cyan);">150x 实时</span>
+              <span class="engine-tag" style="background:var(--accent-dim);color:var(--accent);">48kHz 输出</span>
+            </div>
+          </div>
+          <div class="engine-card fade-up" style="grid-column: 1 / -1;">
+            <div class="engine-card-header">
+              <div>
+                <h3>TADA</h3>
+                <span class="by">by HumeAI</span>
+              </div>
+              <div class="model-sizes"><span>1B</span><span>3B</span></div>
+            </div>
+            <p class="desc">语音-语言模型，700 秒以上连贯音频，文本-声学双重对齐。10 种语言，高质量长音频生成。</p>
+            <div class="engine-tags">
+              <span class="engine-tag" style="background:var(--blue-dim);color:var(--blue);">10 种语言</span>
+              <span class="engine-tag" style="background:var(--green-dim);color:var(--green);">700s+ 连贯音频</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <hr class="section-divider" />
+
+      <!-- DOWNLOAD -->
+      <section id="download" class="section">
+        <div class="fade-up">
+          <p class="section-label">开始使用</p>
+          <h2 class="section-title">下载 Voicebox</h2>
+          <p class="section-desc">适用于 macOS、Windows 和 Linux。无需额外依赖。</p>
+        </div>
+        <div class="download-grid fade-up">
+          <a href="https://github.com/jamiepine/voicebox/releases" target="_blank" class="download-card">
+            <span class="dl-icon">🍎</span>
+            <div class="dl-info">
+              <div class="dl-name">macOS Apple Silicon (ARM)</div>
+              <div class="dl-detail">推荐 · MLX 加速</div>
+            </div>
+            <svg class="dl-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          </a>
+          <a href="https://github.com/jamiepine/voicebox/releases" target="_blank" class="download-card">
+            <span class="dl-icon">🍎</span>
+            <div class="dl-info">
+              <div class="dl-name">macOS Intel (x64)</div>
+              <div class="dl-detail">Intel 处理器</div>
+            </div>
+            <svg class="dl-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          </a>
+          <a href="https://github.com/jamiepine/voicebox/releases" target="_blank" class="download-card">
+            <span class="dl-icon">🪟</span>
+            <div class="dl-info">
+              <div class="dl-name">Windows 64 位 (MSI)</div>
+              <div class="dl-detail">CUDA / DirectML</div>
+            </div>
+            <svg class="dl-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          </a>
+          <div class="download-card" style="opacity:.7;cursor:default;">
+            <span class="dl-icon">🐧</span>
+            <div class="dl-info">
+              <div class="dl-name">Linux</div>
+              <div class="dl-detail">从源码构建</div>
+            </div>
+          </div>
+        </div>
+        <p style="margin-top:20px;font-size:.8125rem;color:var(--text-muted);">
+          <a href="https://github.com/jamiepine/voicebox/releases" target="_blank" style="color:var(--accent);text-decoration:underline;text-underline-offset:3px;">在 GitHub 上查看所有版本 →</a>
+        </p>
+      </section>
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="footer">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <div class="logo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+            Voicebox
+          </div>
+          <p>开源语音克隆工作室。本地优先，永久免费。</p>
+        </div>
+        <div class="footer-col">
+          <h4>产品</h4>
+          <a href="#features">功能</a>
+          <a href="#download">下载</a>
+          <a href="#about">关于</a>
+        </div>
+        <div class="footer-col">
+          <h4>资源</h4>
+          <a href="https://docs.voicebox.sh" target="_blank">文档</a>
+          <a href="https://github.com/jamiepine/voicebox" target="_blank">源代码</a>
+          <a href="https://github.com/jamiepine/voicebox/releases" target="_blank">版本发布</a>
+          <a href="https://github.com/jamiepine/voicebox/issues" target="_blank">问题反馈</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>MIT License · 2024</span>
+        <span>基于 Tauri (Rust) 构建</span>
+      </div>
+    </footer>
+
+    <script>
+      // Wave bars
+      const waveBars = document.getElementById('waveBars');
+      if (waveBars) {
+        for (let i = 0; i < 80; i++) {
+          const bar = document.createElement('div');
+          bar.className = 'wave-bar';
+          const h = Math.sin(i * 0.3) * 12 + Math.random() * 8 + 6;
+          bar.style.height = h + 'px';
+          waveBars.appendChild(bar);
+        }
+      }
+
+      // Marquee
+      const voices = [
+        { name: 'Jarvis', desc: '沉稳英式 AI 助手', bg: 'linear-gradient(135deg,#6366f1,#8b5cf6)' },
+        { name: 'Morgan Freeman', desc: '温暖浑厚的男中音', bg: 'linear-gradient(135deg,#f59e0b,#ef4444)' },
+        { name: 'Bob Ross', desc: '轻柔、令人安心', bg: 'linear-gradient(135deg,#10b981,#06b6d4)' },
+        { name: 'Sam Altman', desc: '深思熟虑的硅谷节奏', bg: 'linear-gradient(135deg,#64748b,#475569)' },
+        { name: 'Scarlett Johansson', desc: '柔和低沉的女中音', bg: 'linear-gradient(135deg,#ec4899,#f43f5e)' },
+        { name: 'David Attenborough', desc: '温暖而充满敬意的叙述', bg: 'linear-gradient(135deg,#3b82f6,#6366f1)' },
+        { name: 'Linus Tech Tips', desc: '充满活力的科技解说', bg: 'linear-gradient(135deg,#f97316,#eab308)' },
+        { name: 'Fireship', desc: '快节奏、冷面科技幽默', bg: 'linear-gradient(135deg,#ef4444,#f97316)' },
+        { name: 'Barack Obama', desc: '有节奏感的沉稳演讲', bg: 'linear-gradient(135deg,#1e40af,#3b82f6)' },
+        { name: 'Zendaya', desc: '轻松现代、不费力的酷感', bg: 'linear-gradient(135deg,#d946ef,#a855f7)' },
+        { name: 'Dario Amodei', desc: '冷静精确的学术深度', bg: 'linear-gradient(135deg,#06b6d4,#0ea5e9)' },
+      ];
+      const track = document.getElementById('marqueeTrack');
+      if (track) {
+        const all = [...voices, ...voices];
+        all.forEach(v => {
+          const card = document.createElement('div');
+          card.className = 'marquee-card';
+          card.innerHTML = `<div class="mc-avatar" style="background:${v.bg}">${v.name[0]}</div><div><div class="mc-name">${v.name}</div><div class="mc-desc">${v.desc}</div></div>`;
+          track.appendChild(card);
+        });
+      }
+
+      // Scroll reveal
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); } });
+      }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+      document.querySelectorAll('.fade-up').forEach(el => observer.observe(el));
+
+      // Smooth scroll
+      document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function(e) {
+          const id = this.getAttribute('href');
+          if (id === '#') return;
+          e.preventDefault();
+          const target = document.querySelector(id);
+          if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      });
+    </script>
+  </body>
+</html>
