@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/assets/icon-dark.webp" alt="Voicebox" width="120" height="120" />
+  <img src="https://raw.githubusercontent.com/jamiepine/voicebox/main/.github/assets/icon-dark.webp" alt="Voicebox" width="120" height="120" />
 </p>
 
 <h1 align="center">Voicebox</h1>
@@ -37,7 +37,7 @@
 
 <p align="center">
   <a href="https://voicebox.sh">
-    <img src="landing/public/assets/app-screenshot-1.webp" alt="Voicebox App Screenshot" width="800" />
+    <img src="https://raw.githubusercontent.com/jamiepine/voicebox/main/landing/public/assets/app-screenshot-1.webp" alt="Voicebox App Screenshot" width="800" />
   </a>
 </p>
 
@@ -48,11 +48,11 @@
 <br/>
 
 <p align="center">
-  <img src="landing/public/assets/app-screenshot-2.webp" alt="Voicebox Screenshot 2" width="800" />
+  <img src="https://raw.githubusercontent.com/jamiepine/voicebox/main/landing/public/assets/app-screenshot-2.webp" alt="Voicebox Screenshot 2" width="800" />
 </p>
 
 <p align="center">
-  <img src="landing/public/assets/app-screenshot-3.webp" alt="Voicebox Screenshot 3" width="800" />
+  <img src="https://raw.githubusercontent.com/jamiepine/voicebox/main/landing/public/assets/app-screenshot-3.webp" alt="Voicebox Screenshot 3" width="800" />
 </p>
 
 <br/>
