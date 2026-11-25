@@ -1,0 +1,229 @@
+---
+title: 故事与时间线
+description: 多轨时间线的数据模型、片段操作与混音导出算法。
+sidebar:
+  order: 9
+---
+
+故事把多条生成结果排到时间线上，构成多角色叙事。系统支持轨道、裁剪、切分与音频混音，导出时把所有片段合成为一个音频文件。
+
+## 架构
+
+- **Story** — 承载故事条目的容器，带名称与描述
+- **Story Item** — 把一条生成结果挂到故事上，附时间线位置、轨道与裁剪数据
+- **导出** — 把所有条目混音成单个音频文件
+
+## 数据模型
+
+```python title="stories"
+class Story(Base):
+    __tablename__ = "stories"
+
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    description = Column(Text)
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)
+```
+
+```python title="story_items"
+class StoryItem(Base):
+    __tablename__ = "story_items"
+
+    id = Column(String, primary_key=True)
+    story_id = Column(String, ForeignKey("stories.id"))
+    generation_id = Column(String, ForeignKey("generations.id"))
+    start_time_ms = Column(Integer, default=0)  # 时间线位置
+    track = Column(Integer, default=0)          # 轨道号
+    trim_start_ms = Column(Integer, default=0)  # 从头部裁掉
+    trim_end_ms = Column(Integer, default=0)    # 从尾部裁掉
+    created_at = Column(DateTime)
+```
+
+## 时间线概念
+
+**起始时间** `start_time_ms` 是条目开始播放的绝对位置。同一轨道上的条目不能重叠，不同轨道可以。
+
+**轨道** `track` 是从 0 开始的整数，标识条目所在的水平行。不同轨道上的音频同时播放，因此轨道是叠加多个声音或音效的主要手段。
+
+**裁剪** `trim_start_ms` 与 `trim_end_ms` 只隐藏源音频的首尾，不修改底层文件。实际播放长度为 `generation.duration * 1000 - trim_start_ms - trim_end_ms`。裁剪是非破坏性的，同一条生成在不同故事里可以有不同裁剪。
+
+## 核心操作
+
+### 添加条目
+
+不传起始时间时，接在现有条目末尾并留 200 ms 间隔：
+
+```python
+async def add_item_to_story(story_id: str, data: StoryItemCreate, db: Session) -> StoryItemDetail:
+    if data.start_time_ms is None:
+        existing_items = get_items_with_durations(story_id, db)
+        max_end_time_ms = max(
+            item.start_time_ms + int(gen.duration * 1000)
+            for item, gen in existing_items
+        )
+        start_time_ms = max_end_time_ms + 200  # 200 ms 间隔
+
+    item = DBStoryItem(
+        id=str(uuid.uuid4()),
+        story_id=story_id,
+        generation_id=data.generation_id,
+        start_time_ms=start_time_ms,
+        track=data.track or 0,
+    )
+    db.add(item)
+    db.commit()
+```
+
+### 移动条目
+
+```python
+async def move_story_item(story_id: str, item_id: str, data: StoryItemMove, db: Session):
+    item = get_item(story_id, item_id, db)
+    item.start_time_ms = data.start_time_ms
+    item.track = data.track
+    db.commit()
+```
+
+### 裁剪条目
+
+```python
+async def trim_story_item(story_id: str, item_id: str, data: StoryItemTrim, db: Session):
+    item = get_item(story_id, item_id, db)
+    generation = get_generation(item.generation_id, db)
+
+    # 裁剪总量不能超过时长
+    max_duration_ms = int(generation.duration * 1000)
+    if data.trim_start_ms + data.trim_end_ms >= max_duration_ms:
+        return None
+
+    item.trim_start_ms = data.trim_start_ms
+    item.trim_end_ms = data.trim_end_ms
+    db.commit()
+```
+
+### 切分条目
+
+把一条拆成两条，两条仍指向同一条生成，只是裁剪区间不同：
+
+```python
+async def split_story_item(story_id: str, item_id: str, data: StoryItemSplit, db: Session):
+    item = get_item(story_id, item_id, db)
+    generation = get_generation(item.generation_id, db)
+
+    current_trim_start = item.trim_start_ms
+    current_trim_end = item.trim_end_ms
+    original_duration_ms = int(generation.duration * 1000)
+    absolute_split_ms = current_trim_start + data.split_time_ms
+
+    # 前半段：从尾部裁掉
+    item.trim_end_ms = original_duration_ms - absolute_split_ms
+
+    # 后半段：从头部裁掉，并后移到切分点
+    new_item = DBStoryItem(
+        generation_id=item.generation_id,
+        start_time_ms=item.start_time_ms + data.split_time_ms,
+        track=item.track,
+        trim_start_ms=absolute_split_ms,
+        trim_end_ms=current_trim_end,
+    )
+    db.add(new_item)
+    db.commit()
+    return [item, new_item]
+```
+
+### 复制条目
+
+副本放在原条目之后，间隔 200 ms，并沿用相同的裁剪：
+
+```python
+async def duplicate_story_item(story_id: str, item_id: str, db: Session):
+    original = get_item(story_id, item_id, db)
+    generation = get_generation(original.generation_id, db)
+
+    effective_duration_ms = (
+        int(generation.duration * 1000)
+        - original.trim_start_ms
+        - original.trim_end_ms
+    )
+
+    new_item = DBStoryItem(
+        generation_id=original.generation_id,
+        start_time_ms=original.start_time_ms + effective_duration_ms + 200,
+        track=original.track,
+        trim_start_ms=original.trim_start_ms,
+        trim_end_ms=original.trim_end_ms,
+    )
+    db.add(new_item)
+    db.commit()
+```
+
+## 混音导出
+
+导出时按绝对时间把每个片段叠加进一条输出缓冲区，重叠部分直接相加，最后做归一化防止削波：
+
+```python
+async def export_story_audio(story_id: str, db: Session) -> bytes:
+    items = get_all_items_with_generations(story_id, db)
+
+    max_end_time_ms = max(d["start_time_ms"] + d["duration_ms"] for d in audio_data)
+    total_samples = int((max_end_time_ms / 1000.0) * sample_rate)
+    final_audio = np.zeros(total_samples, dtype=np.float32)
+
+    for data in audio_data:
+        audio = data["audio"]
+        start_sample = int((data["start_time_ms"] / 1000.0) * sample_rate)
+        trimmed_audio = audio[trim_start_sample:len(audio) - trim_end_sample]
+        final_audio[start_sample:start_sample + len(trimmed_audio)] += trimmed_audio
+
+    max_val = np.abs(final_audio).max()
+    if max_val > 1.0:
+        final_audio = final_audio / max_val
+
+    return audio_to_bytes(final_audio, sample_rate)
+```
+
+## API 端点
+
+| 方法 | 端点 | 说明 |
+| --- | --- | --- |
+| GET | `/stories` | 列出全部故事 |
+| POST | `/stories` | 创建故事 |
+| GET | `/stories/{id}` | 取故事及其条目 |
+| PUT | `/stories/{id}` | 更新故事元数据 |
+| DELETE | `/stories/{id}` | 删除故事 |
+| POST | `/stories/{id}/items` | 添加条目 |
+| DELETE | `/stories/{id}/items/{item_id}` | 删除条目 |
+| PUT | `/stories/{id}/items/{item_id}/move` | 移动条目 |
+| PUT | `/stories/{id}/items/{item_id}/trim` | 裁剪条目 |
+| POST | `/stories/{id}/items/{item_id}/split` | 切分条目 |
+| POST | `/stories/{id}/items/{item_id}/duplicate` | 复制条目 |
+| PUT | `/stories/{id}/items/times` | 批量更新位置 |
+| PUT | `/stories/{id}/items/reorder` | 调整顺序 |
+| GET | `/stories/{id}/export-audio` | 导出混音（`?format=wav\|m4b\|mp3&chapters=none\|auto`；m4b/mp3 需要 ffmpeg，否则返回 503） |
+
+## 响应结构
+
+```json
+{
+  "id": "item_uuid",
+  "story_id": "story_uuid",
+  "generation_id": "generation_uuid",
+  "start_time_ms": 1500,
+  "track": 0,
+  "trim_start_ms": 200,
+  "trim_end_ms": 100,
+  "profile_id": "profile_uuid",
+  "profile_name": "Narrator",
+  "text": "Hello world",
+  "audio_path": "/path/to/audio.wav",
+  "duration": 2.5,
+  "created_at": "2024-01-15T10:30:00Z"
+}
+```
+
+## 前端职责
+
+时间线界面需要：拉取故事及其全部条目、为每个条目渲染波形、拖拽移动、拖边缘裁剪、在所有轨道间同步播放头，以及点击下载时触发导出。
+
+生成记录本身的结构见[生成历史](/docs/developer/history)。

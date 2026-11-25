@@ -1,0 +1,168 @@
+---
+title: 语音生成
+description: 生成语音、取回音频文件与调用 Whisper 转录的三个 HTTP 端点。
+sidebar:
+  order: 1
+---
+
+`POST /generate` 提交合成任务，`GET /audio/{generation_id}` 取回音频文件，`POST /transcribe` 把音频转成文字。三个端点都由本机服务直接应答，只有合成本身在后台队列里执行。
+
+<Aside type="note" title="生成是异步的">
+  `POST /generate` 返回时音频还没写出来：`status` 是 `generating`，`audio_path` 为空。轮询 `GET /history/{generation_id}`，或订阅 `GET /generate/{generation_id}/status` 的 SSE 事件，等 `status` 变成 `completed` 再取音频。
+</Aside>
+
+## `POST /generate`
+
+提交一次语音生成，立即返回一条状态为 `generating` 的生成记录。
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `profile_id` | string | 是 | 声音配置文件 ID |
+| `text` | string | 是 | 要朗读的文本，1–50000 字符 |
+| `language` | string | 否 | 默认 `en`，取值见下方语言列表 |
+| `seed` | integer | 否 | 随机种子，≥ 0；配置不变时相同种子结果可复现 |
+| `model_size` | string | 否 | 默认 `1.7B`，可选 `1.7B`、`0.6B`、`1B`、`3B`；只对有尺寸区分的引擎生效 |
+| `instruct` | string | 否 | 风格指令，≤ 500 字符，仅部分引擎支持 |
+| `engine` | string | 否 | 覆盖配置文件的默认引擎，取值见下方引擎列表 |
+| `personality` | boolean | 否 | 默认 `false`；为 `true` 且配置文件写了声音人格时，先用 LLM 按人格改写文本 |
+| `max_chunk_chars` | integer | 否 | 默认 `800`，范围 100–5000，长文本分块的最大字符数 |
+| `crossfade_ms` | integer | 否 | 默认 `50`，范围 0–500，分块间的交叉淡入淡出时长，`0` 为硬切 |
+| `normalize` | boolean | 否 | 默认 `true`，对输出音频做音量归一化 |
+| `effects_chain` | array | 否 | 效果链，覆盖配置文件默认效果链；元素为 `{"type": "reverb", "enabled": true, "params": {}}` |
+
+语言：`zh`、`en`、`ja`、`ko`、`de`、`fr`、`ru`、`pt`、`es`、`it`、`he`、`ar`、`da`、`el`、`fi`、`hi`、`ms`、`nl`、`no`、`pl`、`sv`、`sw`、`tr`。
+
+引擎：`qwen`、`qwen_custom_voice`、`qwen_voice_design`、`luxtts`、`chatterbox`、`chatterbox_turbo`、`tada`、`kokoro`、`omnivoice`。不传 `engine` 时使用配置文件的 `default_engine`。
+
+### 响应
+
+```json title="200 OK"
+{
+  "id": "3f6c2a10-9b4e-4d21-8f7a-1c2d3e4f5a6b",
+  "profile_id": "7c1d0e2a-5b3f-4a9c-9d8e-0f1a2b3c4d5e",
+  "text": "欢迎使用 Voicebox。",
+  "language": "zh",
+  "audio_path": "",
+  "duration": 0.0,
+  "seed": 42,
+  "instruct": null,
+  "engine": "qwen",
+  "model_size": "1.7B",
+  "status": "generating",
+  "error": null,
+  "is_favorited": false,
+  "source": "manual",
+  "created_at": "2025-03-18T09:12:44Z",
+  "versions": null,
+  "active_version_id": null
+}
+```
+
+音频写好后 `audio_path` 与 `duration` 才有值。`status` 从 `generating` 开始，需要加载模型时会短暂变成 `loading_model`，完成后是 `completed`；失败时为 `failed`，原因写在 `error`。`source` 为 `manual`、`personality_speak`、`mcp` 或 `rest`，用来区分调用来源。
+
+### 示例
+
+```bash title="终端"
+curl -X POST http://127.0.0.1:17493/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "profile_id": "7c1d0e2a-5b3f-4a9c-9d8e-0f1a2b3c4d5e",
+    "text": "欢迎使用 Voicebox。",
+    "language": "zh",
+    "engine": "qwen",
+    "model_size": "1.7B",
+    "seed": 42
+  }'
+```
+
+### 错误
+
+| 状态码 | 说明 |
+| --- | --- |
+| 400 | 配置文件与所选引擎不匹配，或 `personality: true` 时人格改写失败 |
+| 404 | `profile_id` 不存在（`Profile not found`） |
+| 422 | 请求体校验失败，例如 `text` 为空或超长、`language` 不在枚举内 |
+| 500 | 人格改写返回空文本，没有内容可朗读 |
+
+## `GET /audio/{generation_id}`
+
+返回该生成默认版本的音频文件本身，响应体是字节流，不是 JSON。
+
+### 路径参数
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `generation_id` | string | 是 | 生成记录的 ID |
+
+### 响应
+
+`Content-Type` 按文件扩展名推断（`audio/wav`、`audio/mpeg` 等），`Content-Disposition` 给出下载文件名，形如 `attachment; filename="generation_<id>.wav"`。
+
+### 示例
+
+```bash title="终端"
+curl http://127.0.0.1:17493/audio/3f6c2a10-9b4e-4d21-8f7a-1c2d3e4f5a6b -o speech.wav
+```
+
+### 错误
+
+| 状态码 | 说明 |
+| --- | --- |
+| 404 | `Generation not found`，ID 不存在 |
+| 404 | `Audio file not found`，记录存在但音频文件缺失 |
+| 404 | `Generation failed; no audio available`，该次生成失败，没有音频 |
+
+## `POST /transcribe`
+
+上传一段音频，用 Whisper 转成文本，返回纯文本与音频时长。
+
+### 请求体
+
+请求使用 `multipart/form-data`，不能发 JSON。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `file` | 文件 | 是 | 音频文件；扩展名支持 `.wav`、`.mp3`、`.m4a`、`.ogg`、`.flac`、`.aac`、`.webm`、`.opus`，其它扩展名按 `.wav` 解码 |
+| `language` | string | 否 | 指定语言，省略则自动判断；常用值 `en`、`zh`、`ja`、`ko`、`de`、`fr`、`ru`、`pt`、`es`、`it` |
+| `model` | string | 否 | Whisper 尺寸，取值 `base`、`small`、`medium`、`large`、`turbo`；省略则用设置里的默认值 |
+
+### 响应
+
+```json title="200 OK"
+{
+  "text": "这是一段测试录音。",
+  "duration": 3.42
+}
+```
+
+`duration` 是音频本身的长度（秒），不是转录耗时。返回的文本是 Whisper 的原始输出，不做润色。
+
+### 示例
+
+```bash title="终端"
+curl -X POST http://127.0.0.1:17493/transcribe \
+  -F "file=@./sample.wav" \
+  -F "language=zh" \
+  -F "model=turbo"
+```
+
+### 错误
+
+| 状态码 | 说明 |
+| --- | --- |
+| 400 | `model` 不是允许的尺寸，`detail` 会列出可用值 |
+| 202 | 所选 Whisper 模型尚未下载，已在后台开始下载；`detail` 是对象，含 `message`、`model_name`、`downloading` |
+| 422 | 缺少 `file` 字段 |
+| 500 | 音频解码或推理失败，`detail` 是原始错误信息 |
+
+<Aside type="tip" title="202 不是失败">
+  收到 202 说明模型正在下载，稍后重试同一请求即可。想等下载完成，可以订阅 `GET /models/progress/whisper-turbo` 看进度。
+</Aside>
+
+## 相关页面
+
+- [声音配置文件](/docs/api/profiles)：生成前先准备好配置文件。
+- [生成历史](/docs/api/history)：查询状态、读取详情、删除记录。
+- [效果链](/docs/developer/effects-pipeline)：`effects_chain` 里可用的效果类型。

@@ -1,0 +1,239 @@
+---
+title: Docker 部署
+description: 在服务器上用 Docker 运行带 Web 界面的 Voicebox 后端。
+sidebar:
+  order: 3
+---
+
+Voicebox 可以作为 Docker 容器运行，自带完整 Web 界面，不需要桌面应用。适合无头服务器、多人共享的 GPU 机器，或自托管部署。
+
+## 快速开始
+
+```bash title="终端"
+git clone https://github.com/jamiepine/voicebox.git
+cd voicebox
+docker compose up
+```
+
+然后在浏览器打开 [http://localhost:17493](http://localhost:17493)。完整的 Voicebox 界面由后端直接提供。
+
+<Aside type="note">
+  首次构建需要几分钟，因为要编译前端并安装 Python 依赖。之后借助 Docker 层缓存，启动会快得多。
+</Aside>
+
+## 工作原理
+
+镜像采用三段式构建：
+
+1. **前端**：用 Bun 与 Vite 构建 React 单页应用。
+2. **后端**：安装 Python 依赖与 TTS 模型包。
+3. **运行时**：合并成运行 FastAPI 服务的最小镜像。
+
+前端产物存在时，后端会自动提供 Web 界面。所有 API 路由与桌面版行为一致。
+
+## 配置
+
+### docker-compose.yml
+
+默认的 `docker-compose.yml` 只绑定本机回环地址，为数据与模型缓存挂载持久化卷，并设置了合理的资源上限：
+
+```yaml title="docker-compose.yml"
+services:
+  voicebox:
+    build: .
+    container_name: voicebox
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:17493:17493"
+    volumes:
+      - ./output:/app/data/generations
+      - voicebox-data:/app/data
+      - huggingface-cache:/home/voicebox/.cache/huggingface
+    environment:
+      - LOG_LEVEL=info
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+```
+
+### 对外开放
+
+默认只监听 `127.0.0.1`。要让局域网内其他机器连接，改端口映射：
+
+```yaml
+ports:
+  - "0.0.0.0:17493:17493"
+```
+
+<Aside type="caution">
+  API 没有内置身份验证。只对可信网络开放，或者在前面加一层带鉴权的反向代理。
+</Aside>
+
+### 环境变量
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `LOG_LEVEL` | `info` | 日志详细程度：`debug`、`info`、`warning`、`error` |
+| `VOICEBOX_MODELS_DIR` | HuggingFace 缓存目录 | 模型存储的自定义路径 |
+| `VOICEBOX_CORS_ORIGINS` | 本地来源 | 额外允许的 CORS 来源，逗号分隔 |
+
+### 资源限制
+
+默认 compose 文件把容器限制在 4 核 CPU 与 8 GB 内存，按硬件情况调整：
+
+```yaml
+deploy:
+  resources:
+    limits:
+      cpus: '8'
+      memory: 16G
+```
+
+<Aside type="note">
+  TTS 模型推理很吃内存。8 GB 是加载单个引擎的下限；需要同时加载多个引擎时，建议 16 GB 以上。
+</Aside>
+
+## 卷
+
+| 卷 | 容器路径 | 用途 |
+| --- | --- | --- |
+| `./output` | `/app/data/generations` | 生成的音频文件（bind mount，便于从宿主机直接取用） |
+| `voicebox-data` | `/app/data` | 声音配置文件、数据库、缓存 |
+| `huggingface-cache` | `/home/voicebox/.cache/huggingface` | 已下载的模型（跨镜像重建保留） |
+
+`huggingface-cache` 尤其关键：缺了它，每次重建容器都要重新下载模型。
+
+## GPU 加速
+
+### NVIDIA（CUDA）
+
+要在容器内使用 NVIDIA 显卡，先安装 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)，再在 compose 文件里声明 GPU：
+
+```yaml
+services:
+  voicebox:
+    build: .
+    # ... existing config ...
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+```
+
+### AMD（ROCm）
+
+AMD 显卡使用 ROCm 运行时：
+
+```yaml
+services:
+  voicebox:
+    build: .
+    # ... existing config ...
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video
+```
+
+### 纯 CPU
+
+默认配置就跑在 CPU 上，可以正常工作，只是更慢。CPU 上最快的引擎是 LuxTTS（约 150 倍实时速度）。
+
+## 安全
+
+镜像遵循以下安全实践：
+
+- **非 root 用户**：服务以 `voicebox` 用户运行，不是 `root`。
+- **只绑本机**：默认只能从宿主机访问。
+- **健康检查**：每 30 秒轮询一次 `/health`，服务挂起时自动重启。
+- **CORS 受限**：默认只允许本地来源。
+
+### 放在反向代理后面
+
+生产环境建议在 nginx 或 Caddy 后面运行，并加上 TLS 与身份验证：
+
+```nginx title="nginx"
+server {
+    listen 443 ssl;
+    server_name voicebox.example.com;
+
+    ssl_certificate /etc/ssl/certs/voicebox.pem;
+    ssl_certificate_key /etc/ssl/private/voicebox.key;
+
+    auth_basic "Voicebox";
+    auth_basic_user_file /etc/nginx/.htpasswd;
+
+    location / {
+        proxy_pass http://127.0.0.1:17493;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+## 故障排查
+
+### 容器起来了但界面显示 JSON
+
+如果看到 `{"message": "voicebox API", ...}` 而不是 Web 界面，通常说明镜像构建时前端产物没生成出来。查看构建日志：
+
+```bash
+docker compose build --no-cache
+```
+
+重点看 **Build frontend** 阶段的报错。
+
+### 每次重启都重新下载模型
+
+确认 `huggingface-cache` 卷已配置。缺了它，容器停止后模型缓存就丢了：
+
+```yaml
+volumes:
+  - huggingface-cache:/home/voicebox/.cache/huggingface
+```
+
+### 内存不足
+
+TTS 模型体积很大。容器被 OOM killer 杀掉时，提高内存上限：
+
+```yaml
+deploy:
+  resources:
+    limits:
+      memory: 16G
+```
+
+### 端口被占用
+
+```bash title="终端"
+# 查看谁占用了 17493
+lsof -i :17493
+```
+
+换一个宿主机端口即可：
+
+```yaml
+ports:
+  - "127.0.0.1:8080:17493"
+```
+
+## 预构建镜像（尚未提供）
+
+后续版本计划把预构建镜像发布到 GitHub Container Registry，届时不必在本地构建：
+
+```bash
+# 目前还不可用，将在后续版本提供
+docker run -p 17493:17493 ghcr.io/jamiepine/voicebox:latest
+```
+
+CPU 镜像约 3-4 GB（Python + PyTorch + TTS 包），面向 NVIDIA 用户的独立 CUDA 标签约 6-8 GB。对机器学习镜像来说属于正常体积。现阶段请用上面的 `docker compose up` 从源码构建。
+
+## 桌面端连接 Docker 后端
+
+桌面应用也可以当作 Docker 后端的客户端。在桌面应用里进入 **Settings → Server**，启用 **Remote Mode**，填入 `http://<server-ip>:17493`。详见[远程模式](/docs/getting-started/remote-mode)。

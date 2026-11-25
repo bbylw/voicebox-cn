@@ -1,0 +1,169 @@
+---
+title: 贡献指南
+description: 分支与提交约定、代码风格、PR 流程以及可参与的方向。
+sidebar:
+  order: 14
+---
+
+Voicebox 用 TypeScript、Python 与 Rust 三套技术栈，文档、界面与构建流程都欢迎改动。下面是从环境到 PR 的完整约定。
+
+## 行为准则
+
+- 尊重他人，保持包容
+- 欢迎新人，帮他们上手
+- 反馈要建设性
+- 尊重不同的观点与经历
+
+## 开始之前
+
+1. **读文档** — 先弄清 Voicebox 的工作方式
+2. **配好开发环境** — 见[开发环境搭建](/docs/developer/setup)
+3. **熟悉代码结构** — 至少了解 `app/`、`backend/`、`tauri/` 的分工
+4. **看 `docs/PROJECT_STATUS.md`** — 这是活的工程路线图，记录按优先级排列的任务（Tier 1 → 3）、架构瓶颈，以及正在评估的候选 TTS 引擎（含部分被搁置的原因）
+5. **查已有 issue** — 避免和别人做重复工作
+
+## 参与方式
+
+- **报 bug** — 附上复现步骤
+- **提需求** — 先开 discussion 或 issue
+- **改文档** — 修错字、补示例、把说明写清楚
+- **写代码** — 修缺陷、加功能、优化性能
+
+## 开发流程
+
+### 1. Fork 并克隆
+
+```bash title="终端"
+git clone https://github.com/YOUR_USERNAME/voicebox.git
+cd voicebox
+```
+
+### 2. 建分支
+
+```bash title="终端"
+git checkout -b feature/voice-effects     # 新功能
+git checkout -b fix/audio-playback-issue  # 修缺陷
+git checkout -b docs/api-examples         # 文档
+```
+
+### 3. 写改动
+
+**TypeScript / React：** 用 strict 模式、函数组件加 hooks、具名导出，格式化交给 Biome（会自动跑）。
+
+**Python：** 遵循 PEP 8、写类型标注、I/O 用 `async/await`、公开函数写 docstring。
+
+**Rust：** 遵循 Rust 惯例，命名要表意，错误显式处理，提交前跑 `rustfmt`。
+
+**提交信息：** 用祈使句，首行控制在 50 字符内，需要时补正文。
+
+```bash title="终端"
+# 好
+git commit -m "Add voice profile export feature"
+git commit -m "Fix audio playback stopping after 30 seconds"
+
+# 避免
+git commit -m "Update code"
+git commit -m "Fix bug"
+```
+
+**测试：** 在应用里手动验证改动，确认后端端点可用，检查 TypeScript 与 Python 没有报错，界面渲染正常；能补自动化测试就补。
+
+### 4. 推送并发起 PR
+
+```bash title="终端"
+git push origin feature/your-feature-name
+```
+
+推送后在 GitHub 上创建 pull request。
+
+## PR 要求
+
+<Steps>
+  <Step title="标题写清楚">
+    用能说明改动的标题，例如「Add voice profile export functionality」「Fix audio playback stopping after 30 seconds」「Improve generation speed with caching」。
+  </Step>
+  <Step title="补描述">
+    说明改了什么、为什么改、怎么验证、界面改动附截图，并引用相关 issue。
+  </Step>
+  <Step title="更新文档">
+    行为变化要同步文档；新增端点补 API 说明；必要时更新 README。
+  </Step>
+  <Step title="过一遍清单">
+    代码符合风格指南、文档已更新、改动已验证、没有未记录的破坏性变更、`CHANGELOG.md` 已更新。
+  </Step>
+</Steps>
+
+## 项目结构
+
+```text title="voicebox"
+app/src/
+├── components/
+├── lib/
+├── hooks/
+└── stores/
+backend/
+├── app.py
+├── main.py
+├── server.py
+├── models.py
+├── routes/
+├── services/
+├── backends/
+├── database/
+└── utils/
+tauri/src-tauri/
+web/
+scripts/
+```
+
+## 可贡献的方向
+
+### 修缺陷
+
+从 [现有 issue](https://github.com/jamiepine/voicebox/issues) 里挑；改完充分验证，能补回归测试就补。
+
+### 新功能
+
+动手前先看 `docs/PROJECT_STATUS.md` 与仓库里的 roadmap，避免和已在排期或已评估过的工作重复。较大的功能先在 issue 里讨论，功能范围要聚焦。要接入新的 TTS 引擎？按 [TTS 引擎](/docs/developer/tts-engines)里的分阶段流程走。
+
+### 文档
+
+把说明写清楚、修错字、补代码示例、写教程与指南、完善 API 说明。
+
+### 界面与体验
+
+提升可访问性、打磨视觉、优化性能、补充过渡动画。
+
+### 基础设施
+
+改进构建流程、完善 CI/CD、压缩产物体积、搭建测试设施。
+
+## 发布流程
+
+维护者用语义化版本打 tag，GitHub Actions 会自动构建并发布 Release：
+
+```bash title="终端"
+git tag v0.2.0 && git push --tags
+```
+
+打包细节见[构建与打包](/docs/developer/building)，签名与清单见[自动更新](/docs/developer/autoupdater)。
+
+## 社区与致谢
+
+- **GitHub Issues：** 报 bug 与提需求
+- **GitHub Discussions：** 一般讨论与想法
+- **Discord：** 实时交流（筹备中）
+
+贡献者会出现在 `CHANGELOG.md`、GitHub 贡献者列表与发布说明里。
+
+## 许可
+
+提交贡献即表示同意以 MIT 许可证授权你的改动。
+
+## 还有问题？
+
+1. 先查文档，本页从[开发者指南](/docs/developer/)开始
+2. 读仓库里的 `docs/PROJECT_STATUS.md`，了解当前的工程重点
+3. 搜[已有 issue](https://github.com/jamiepine/voicebox/issues)
+4. 没有答案就开新 issue 或 discussion
+5. 也见仓库根目录的 `CONTRIBUTING.md`

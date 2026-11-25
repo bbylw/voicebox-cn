@@ -1,0 +1,135 @@
+---
+title: Captures
+description: 音频与转录成对归档，每次听写、录音和上传都能回放、重转录与润色。
+sidebar:
+  order: 8
+---
+
+一条 **capture** 是一段音频与它的转录的配对。所有听写、手动录音和上传的音频文件都会落在 Captures 标签页，原始音频与文本一起保存，方便你回放、换模型重新转录、润色转录，或把内容送到别处——包括用任意声音配置文件重新生成语音。
+
+<Aside type="note" title="0.5.0 引入">
+Captures 标签页在 0.5.0 与全局听写、按配置文件的人格模式一起推出。如果你用过更早的版本，原来的 Audio 标签页已移到 **Settings → Audio Channels**，把位置让给了 Captures。
+</Aside>
+
+## Captures 的来源
+
+| 来源 | 出现方式 | 徽标 |
+| --- | --- | --- |
+| **听写** | 由全局快捷键触发（见[全局听写](/docs/guide/dictation)），默认自动润色。 | `dictation` |
+| **应用内录音** | 在 Captures 标签页里用内置麦克风直接录。 | `recording` |
+| **文件上传** | 拖进 Captures 标签页的任意音频文件：`.wav`、`.mp3`、`.m4a`、`.webm`、`.opus`、`.flac`。 | `file` |
+
+三条路径共用同一套后端流水线、同一个模型选择器和同一组润色参数。来源徽标只是为了让你在长列表里快速扫读。
+
+## 列表视图
+
+Captures 主视图是按时间排列的列表，每行显示：
+
+- 转录（原始或润色版——有润色版时显示润色版）
+- 时长 + 时间戳
+- 来源徽标
+- 原始音频的播放按钮
+- 带逐行操作的三点菜单
+
+过滤与搜索尚未实现，后续版本会补上。
+
+## 详情视图
+
+点进一条 capture 会打开详情视图：
+
+- 原始音频的**波形播放器**
+- **转录编辑器**——点进去即可编辑，失焦时保存
+- **润色版 / 原始版切换**（这条 capture 跑过润色时才有）
+- **单条操作栏**——重新转录、润色、以声音播放、删除
+- **设置快照**——用过的 STT 模型、处理这条 capture 时的润色参数，以及播放时用过的声音模型
+
+## 重新转录
+
+用另一个 Whisper 模型跑 capture 的原始音频，不需要重新上传或重新润色。适合这些情况：
+
+- 默认模型听错了，想换更大的模型试试
+- 噪声片段用了 Base，想改用 Turbo 重跑
+- 非英语片段需要显式语言提示
+
+**Settings → Captures → Transcription** 控制新 capture 的默认模型和语言锁定。重新转录默认沿用这些设置，也可以对单条 capture 覆盖。
+
+## 润色
+
+用本地 LLM 跑一遍原始转录，生成清理后的版本。首次润色时会给这条 capture 的参数拍一份快照，之后可以用不同参数重新润色，原始转录不会丢：
+
+| 参数 | 作用 |
+| --- | --- |
+| **智能清理（Smart cleanup）** | 去掉填充词（`um`、`uh`、`like`），整理标点与大小写。 |
+| **移除自我更正（Remove self-corrections）** | 说话人回头改口时（「其实不对，是周二」），保留最终版本。 |
+| **保留技术术语（Preserve technical terms）** | 不动标识符（`handleSubmit`、`npm install`）。 |
+
+关于 Voicebox 如何在转录送进 LLM **之前**剥掉 Whisper 循环幻觉，见[全局听写](/docs/guide/dictation)的润色一节——一条 capture 可以反复润色任意多次，都不会重新带出「thanks for watching thanks for watching」这类回声。
+
+润色模型选择器（三档内置 Qwen3）在 **Settings → Captures → Refinement**。
+
+## 以声音播放
+
+除了当转录归档，capture 还能用任意声音配置文件朗读出来。下拉框里列出全部声音配置文件；选一个，capture 的文本就会送进 `/generate`，用那个声音合成。
+
+常见用法：
+
+- 用你喜欢的人的克隆声音听回自己的听写
+- 把口述的消息以某个特定角色的音频回复发出去
+- 不重新打字，快速为故事试一句台词
+
+播放使用所选配置文件绑定的引擎，规则与 Generate 标签页一致。这条路径不经过 LLM，转录原样送进 TTS。如果你想要智能体式的「先改写内容再朗读」，那是[人格模式](/docs/guide/voice-personalities)做的事；同一套原语也通过 [MCP 服务器](/docs/guide/mcp-server)暴露给支持 MCP 的智能体，Claude Code、Cursor 或 Cline 可以自己用你的声音说话。
+
+<Aside type="note">
+Captures 标签页「以声音播放」的默认声音在 **Settings → Captures → Playback → Default voice** 设置。单条 capture 仍可覆盖。
+</Aside>
+
+## 发送到菜单
+
+每条 capture 都有一个发送到菜单，把内容送进 Voicebox 的其它部分：
+
+- **Copy transcript**——复制到剪贴板
+- **Use as voice sample…**——把这条 capture 提升为某个声音配置文件的样本。会打开配置文件选择器（冷启动时可点 **+ New Profile**）和参考文本确认对话框，因为克隆要求 `reference_text` 与音频逐字一致。按需修改后保存——capture 原样留在 Captures 标签页，样本是副本，不是移动。
+
+## 存储
+
+原始音频与转录一起保存在 Voicebox 数据目录。**Settings → Captures → Storage** 显示 captures 文件夹，并可直接在文件管理器里打开。
+
+只要音频文件还在，每条 capture 都能重新处理（重新转录、润色、以声音播放）。
+
+## 短录音保护
+
+短于 **300 ms** 的音频在客户端直接丢弃，不会上传，避免误触快捷键产生空 capture。这个阈值经过调整，既能滤掉误触，又不会截断有意的短听写。
+
+## 键盘快捷键
+
+在 Captures 标签页内：
+
+| 按键 | 操作 |
+| --- | --- |
+| `Space` | 播放 / 暂停选中的 capture |
+| `↑` / `↓` | 列表里的上一条 / 下一条 capture |
+| `Enter` | 在详情视图打开选中的 capture |
+| `⌘ / Ctrl` + `C`（详情视图中） | 复制转录 |
+
+## API 接口
+
+Captures 标签页由一小组 REST 端点支撑：
+
+| 方法 | 端点 | 用途 |
+| --- | --- | --- |
+| `POST` | `/captures` | 上传音频并启动流水线（STT、可选润色、归档）。 |
+| `GET` | `/captures` | 列出 captures。 |
+| `GET` | `/captures/{id}` | 取一条 capture。 |
+| `POST` | `/captures/{id}/retranscribe` | 用指定模型重跑 STT。 |
+| `POST` | `/captures/{id}/refine` | 用指定参数重跑润色。 |
+| `POST` | `/profiles/{id}/samples/from-capture/{capture_id}` | 把一条 capture 提升为声音配置文件样本。 |
+
+这些端点稳定，可以直接在自己的脚本里调用。把 Voicebox 当服务器给本机其它工具用的方法见 [API 参考](/docs/api/)。
+
+## 下一步
+
+<CardGrid>
+  <Card title="全局听写" href="/docs/guide/dictation">大多数 capture 的来源：全局快捷键流程。</Card>
+  <Card title="声音人格" href="/docs/guide/voice-personalities">按配置文件的创作按钮与人格改写开关，适合要变换内容而不只是转录的场景。</Card>
+  <Card title="创建声音配置文件" href="/docs/guide/creating-voice-profiles">把一条 capture 提升为配置文件上的声音样本。</Card>
+</CardGrid>

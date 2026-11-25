@@ -1,0 +1,70 @@
+---
+title: 录音与转录
+description: 应用里可以录音和转录的三个位置：听写、Captures 与声音配置文件样本。
+sidebar:
+  order: 6
+---
+
+Voicebox 在三处不同场景里录音和转录，各自服务于应用里不同的界面。这一页是张地图，细节请点进对应页面看。
+
+| 目标 | 位置 | 说明 |
+| --- | --- | --- |
+| 说话，让文字落进别的应用 | 全局快捷键 → 自动粘贴，并落进 Captures | [全局听写](/docs/guide/dictation) |
+| 在 Voicebox 里录一段想法、会议或语音备忘 | Captures 标签页 | [Captures](/docs/guide/captures) |
+| 录一段用来克隆声音的片段 | Profiles 标签页 → 配置文件样本 | [创建声音配置文件](/docs/guide/creating-voice-profiles) |
+
+三条路径共用同一套 STT 后端，不同的只是外围工作流。
+
+## 听写
+
+0.5.0 的主打功能。在本机任意位置按住一组快捷键、说话、松开，转录结果会落进你之前聚焦的那个输入框；如果开着自动润色，还会先经过本地 LLM 清理。每次听写都会在 Captures 标签页里留下记录，可以回放或换模型重新转录。
+
+完整说明见[全局听写](/docs/guide/dictation)。
+
+## Captures 标签页
+
+当你不需要往别的应用里粘贴、只想要一段音频的干净转录时，Captures 就是入口。可以在应用内直接录制，也可以拖进文件（`.wav`、`.mp3`、`.m4a`、`.webm`、`.opus`、`.flac`），还能翻出已经落在那里的听写记录。每条 capture 都会保留原始音频，可以用别的模型重新转录，也可以用任意声音配置文件回放。
+
+详见 [Captures](/docs/guide/captures)。
+
+## 声音配置文件样本
+
+这是另一条流程，在 Profiles 标签页里。用音频片段创建配置文件时，真正被克隆引擎学习的是样本——样本上的 `reference_text` 必须与音频**逐字一致**，所以样本和 capture 是两套不同的数据模型。
+
+你可以在 Captures 标签页的发送到菜单里把一条 capture 提升为样本（「Use as voice sample…」），它会先弹出参考文本确认对话框，让你在保存前修正转录中最后约 10% 的错误。
+
+详见[创建声音配置文件](/docs/guide/creating-voice-profiles)。
+
+## 转录模型
+
+三条路径共用同一批 Whisper 模型。在 **Settings → Captures → Transcription** 里设默认模型，需要时对单条 capture 覆盖。
+
+| 模型 | 大小 | 适用场景 |
+| --- | --- | --- |
+| Whisper Base | 约 300 MB | 快，默认选项，适合干净语音 |
+| Whisper Small | 约 500 MB | 质量更好，仍然很快 |
+| Whisper Medium | 约 1.5 GB | 高质量 |
+| Whisper Large | 约 3 GB | 质量最好，CPU 上较慢 |
+| Whisper Turbo | 约 1.5 GB | Large 档的质量，速度约为 Large 的 5 倍 |
+
+在 Apple Silicon 上，模型通过 **MLX-Whisper** 运行，比 PyTorch 快约 8 倍；其他平台走 PyTorch `transformers`。后端会自动选对，不需要你配置。
+
+<Aside type="note">
+噪声较大的片段优先用 **Turbo** 或 **Large**。Base 在困难输入上会出现幻觉，最典型的是「thanks for watching」循环。Voicebox 会在 LLM 润色之前确定性地清掉这类循环，所以即使原始转录里有这些内容，capture 仍然可以干净地重新润色。
+</Aside>
+
+## 语言
+
+短音频（约 5 秒以下）上 Whisper 的自动检测不太可靠，可以显式传入语言提示。在 **Settings → Captures → Transcription → Language** 里设默认语言锁定，或对单条 capture 覆盖。
+
+## 转录 API
+
+STT 后端、模型加载、预处理和 `/transcribe` 端点的开发者细节见 [转录开发者指南](/docs/developer/transcription)。Captures 流水线另外提供更上层的 `/captures` 端点，把 STT、归档和可选的润色合成一次调用，见 [Captures](/docs/guide/captures)。
+
+## 下一步
+
+<CardGrid>
+  <Card title="全局听写" href="/docs/guide/dictation">按住快捷键，在任意应用里说话输入。</Card>
+  <Card title="Captures" href="/docs/guide/captures">音频与转录的成对归档。</Card>
+  <Card title="创建声音配置文件" href="/docs/guide/creating-voice-profiles">为声音克隆录制或上传样本。</Card>
+</CardGrid>

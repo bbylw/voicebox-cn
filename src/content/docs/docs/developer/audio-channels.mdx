@@ -1,0 +1,193 @@
+---
+title: 音频通道
+description: 频道、设备映射与配置文件映射构成的多路输出路由模型。
+sidebar:
+  order: 10
+---
+
+音频通道把语音输出路由到不同的音频设备，用于多路输出场景：让不同的声音从不同的扬声器或应用里出来。后端只负责存储这套配置，真正的播放路由由前端完成。
+
+## 三个概念
+
+- **频道（Channel）** — 一条命名音频总线，可绑定到若干输出设备
+- **设备映射（Device Mapping）** — 频道到操作系统音频设备标识的关联
+- **配置文件映射（Profile Mapping）** — 声音配置文件到频道的多对多关联
+
+## 数据模型
+
+```python title="audio_channels"
+class AudioChannel(Base):
+    __tablename__ = "audio_channels"
+
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    is_default = Column(Boolean, default=False)
+    created_at = Column(DateTime)
+```
+
+```python title="channel_device_mappings"
+class ChannelDeviceMapping(Base):
+    __tablename__ = "channel_device_mappings"
+
+    id = Column(String, primary_key=True)
+    channel_id = Column(String, ForeignKey("audio_channels.id"))
+    device_id = Column(String)  # 操作系统设备标识
+```
+
+```python title="profile_channel_mappings"
+class ProfileChannelMapping(Base):
+    profile_id = Column(String, ForeignKey("profiles.id"), primary_key=True)
+    channel_id = Column(String, ForeignKey("audio_channels.id"), primary_key=True)
+```
+
+## 默认频道
+
+数据库初始化时会创建默认频道，并把已有配置文件都挂上去：
+
+```python
+def init_db():
+    default_channel = db.query(AudioChannel).filter(AudioChannel.is_default == True).first()
+
+    if not default_channel:
+        default_channel = AudioChannel(id=str(uuid.uuid4()), name="Default", is_default=True)
+        db.add(default_channel)
+
+        for profile in db.query(VoiceProfile).all():
+            db.add(ProfileChannelMapping(
+                profile_id=profile.id,
+                channel_id=default_channel.id,
+            ))
+```
+
+默认频道既不能修改也不能删除，保证任何配置文件始终有可用的输出。
+
+## 核心操作
+
+### 创建频道
+
+名称必须唯一，设备映射随之写入：
+
+```python
+async def create_channel(data: AudioChannelCreate, db: Session) -> AudioChannelResponse:
+    if db.query(DBAudioChannel).filter_by(name=data.name).first():
+        raise ValueError(f"Channel with name '{data.name}' already exists")
+
+    channel = DBAudioChannel(id=str(uuid.uuid4()), name=data.name, is_default=False)
+    db.add(channel)
+
+    for device_id in data.device_ids:
+        db.add(DBChannelDeviceMapping(
+            id=str(uuid.uuid4()),
+            channel_id=channel.id,
+            device_id=device_id,
+        ))
+
+    db.commit()
+```
+
+### 更新频道
+
+默认频道会被拒绝；传了 `device_ids` 就先清空旧映射再重建：
+
+```python
+async def update_channel(channel_id: str, data: AudioChannelUpdate, db: Session):
+    channel = db.query(DBAudioChannel).filter_by(id=channel_id).first()
+
+    if channel.is_default:
+        raise ValueError("Cannot modify the default channel")
+
+    if data.name is not None:
+        channel.name = data.name
+
+    if data.device_ids is not None:
+        db.query(DBChannelDeviceMapping).filter_by(channel_id=channel_id).delete()
+        for device_id in data.device_ids:
+            db.add(DBChannelDeviceMapping(channel_id=channel.id, device_id=device_id))
+
+    db.commit()
+```
+
+### 删除频道
+
+默认频道不可删；删除时一并清掉设备映射与配置文件映射：
+
+```python
+async def delete_channel(channel_id: str, db: Session) -> bool:
+    channel = db.query(DBAudioChannel).filter_by(id=channel_id).first()
+
+    if channel.is_default:
+        raise ValueError("Cannot delete the default channel")
+
+    db.query(DBChannelDeviceMapping).filter_by(channel_id=channel_id).delete()
+    db.query(DBProfileChannelMapping).filter_by(channel_id=channel_id).delete()
+    db.delete(channel)
+    db.commit()
+```
+
+### 双向分配
+
+两个方向都能改，结果都落在同一张 `profile_channel_mappings` 上。`set_channel_voices()` 以频道为主体，先校验频道与所有配置文件存在，再整体替换该频道的映射；`set_profile_channels()` 以配置文件为主体做同样的事。
+
+```python
+# 频道 → 声音
+async def set_channel_voices(channel_id: str, data: ChannelVoiceAssignment, db: Session) -> None:
+    db.query(DBProfileChannelMapping).filter_by(channel_id=channel_id).delete()
+    for profile_id in data.profile_ids:
+        db.add(DBProfileChannelMapping(profile_id=profile_id, channel_id=channel_id))
+    db.commit()
+```
+
+## API 端点
+
+| 方法 | 端点 | 说明 |
+| --- | --- | --- |
+| GET | `/channels` | 列出全部频道 |
+| POST | `/channels` | 创建频道 |
+| GET | `/channels/{id}` | 按 ID 取频道 |
+| PUT | `/channels/{id}` | 更新频道 |
+| DELETE | `/channels/{id}` | 删除频道 |
+| GET | `/channels/{id}/voices` | 取已分配的声音 |
+| PUT | `/channels/{id}/voices` | 设置已分配的声音 |
+| GET | `/profiles/{id}/channels` | 取配置文件所属频道 |
+| PUT | `/profiles/{id}/channels` | 设置配置文件所属频道 |
+
+## 请求与响应
+
+```json title="AudioChannelCreate"
+{
+  "name": "Speakers",
+  "device_ids": ["device_uuid_1", "device_uuid_2"]
+}
+```
+
+```json title="AudioChannelResponse"
+{
+  "id": "channel_uuid",
+  "name": "Speakers",
+  "is_default": false,
+  "device_ids": ["device_uuid_1", "device_uuid_2"],
+  "created_at": "2024-01-15T10:30:00Z"
+}
+```
+
+`PUT /channels/{id}/voices` 的请求体是 `{"profile_ids": ["profile_1", "profile_2"]}`。
+
+## 典型用法
+
+**多路输出** — 直播时让不同角色走不同设备：建「Stream」频道指向 OBS 虚拟音频，建「Monitor」频道指向耳机；把「Narrator」配置文件同时挂到两个频道，「Character 1」只挂到 Stream。
+
+**虚拟声卡** — 常见设备来源包括 VB-Audio Virtual Cable、macOS 上的 BlackHole 与 Soundflower。
+
+## 前端职责
+
+1. 用 Web Audio API 或 Tauri 枚举设备
+2. 展示频道列表及其设备绑定
+3. 通过拖拽或下拉分配配置文件
+4. 按配置文件所属频道把播放路由到正确设备
+
+## 限制
+
+- 设备 ID 与操作系统绑定，跨平台不通用
+- 热插拔可能让设备 ID 失效
+- 默认频道不能修改或删除
+- 实际音频路由由前端负责，后端只存配置

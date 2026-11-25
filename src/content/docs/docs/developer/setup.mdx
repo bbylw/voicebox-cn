@@ -1,0 +1,232 @@
+---
+title: 开发环境搭建
+description: 搭建 Python 3.12、Bun、Rust 环境并跑起前后端。
+sidebar:
+  order: 1
+---
+
+Voicebox 的本地开发由 Just 任务统一驱动：`just setup` 负责 Python 虚拟环境、JS 依赖与开发用 sidecar，`just dev` 同时拉起 FastAPI 后端与 Tauri 桌面应用。下面先给最短路径，再展开手动搭建、目录结构与常见卡点。
+
+## 快速开始
+
+```bash title="终端"
+# 克隆并进入仓库
+git clone https://github.com/jamiepine/voicebox.git
+cd voicebox
+
+# 一次性配置（Python venv、JS 依赖、开发 sidecar）
+just setup
+
+# 启动开发（后端 + 桌面应用）
+just dev
+```
+
+`just dev` 会在后端尚未运行时自动启动 Python 后端，随后启动 Tauri 桌面应用。
+
+## 前置依赖
+
+| 依赖 | 安装 | 说明 |
+| --- | --- | --- |
+| Bun | `curl -fsSL https://bun.sh/install \| bash` | 前端依赖与构建，替代 npm/yarn |
+| Python 3.12 | `python3.12 --version`（macOS/Linux）、`py -3.12 --version`（Windows） | 虚拟环境固定 3.12 以对齐 CI，部分依赖尚无 3.13 版本；Debian/Ubuntu 还需装 `python3.12-venv` |
+| Rust | `rustc --version` | 编译 Tauri 外壳，通过 rustup 安装 |
+| Just | `brew install just`（macOS）、`cargo install just`（Linux/Windows） | 任务入口，三个平台都可用 |
+
+<Aside type="note">
+Python 版本不要用发行版自带的 3.13 或 3.11：`just setup` 会把 venv 重建并固定到 3.12。
+</Aside>
+
+## Just 命令
+
+`just --list` 输出全部任务。以下为常用项。
+
+### 环境配置
+
+| 命令 | 作用 |
+| --- | --- |
+| `just setup` | 完整配置：Python venv + JS 依赖 + 开发 sidecar。venv 固定 3.12（版本不对会重建），并在 Apple Silicon 上识别 MLX、在 Windows 上识别 NVIDIA 或 Intel Arc 以安装加速版 PyTorch |
+| `just setup-python` | 只建 Python venv 与依赖 |
+| `just setup-js` | 只执行 `bun install` |
+
+### 开发
+
+| 命令 | 作用 |
+| --- | --- |
+| `just dev` | 启动后端 + Tauri 桌面应用（已有后端会被复用） |
+| `just dev-web` | 启动后端 + Web 应用（不编译 Tauri/Rust） |
+| `just dev-backend` | 只启动后端 |
+| `just dev-frontend` | 只启动 Tauri 应用（后端需已在运行） |
+| `just kill` | 结束所有开发进程 |
+
+### 构建
+
+| 命令 | 作用 |
+| --- | --- |
+| `just build` | CPU 服务端二进制 + Tauri 安装包 |
+| `just build-local` | **Windows：** CPU + CUDA 服务端二进制 + Tauri 安装包 |
+| `just build-server` | 只构建 CPU 服务端二进制 |
+| `just build-server-cuda` | **Windows：** 只构建 CUDA 服务端二进制，产物放到 `%APPDATA%/sh.voicebox.app/backends/cuda` 便于本地测试 |
+| `just build-tauri` | 只构建 Tauri 应用 |
+| `just build-web` | 只构建 Web 应用 |
+
+### 质量检查
+
+| 命令 | 作用 |
+| --- | --- |
+| `just check` | lint + 格式化 + 类型检查（Biome + ruff） |
+| `just fix` | 自动修复 lint 与格式问题 |
+| `just lint` / `just format` | 只做 lint 或只做格式化 |
+| `just test` | 运行 Python 测试（pytest） |
+| `just test-models` | 用冻结后的二进制对每个 TTS 引擎做端到端生成验证 |
+
+### 数据库与工具
+
+| 命令 | 作用 |
+| --- | --- |
+| `just db-init` | 初始化 SQLite 数据库 |
+| `just db-reset` | 删除并重建数据库 |
+| `just generate-api` | 从后端 OpenAPI schema 生成 TypeScript API 客户端 |
+| `just docs` | 打开 `http://localhost:17493/docs` |
+| `just logs` | 跟踪后端日志 |
+| `just clean` | 清理构建产物 |
+| `just clean-python` | 删除 Python venv 与 `__pycache__` |
+| `just clean-all` | 彻底清理，包含所有 `node_modules` |
+
+## 项目结构
+
+```text title="仓库结构"
+voicebox/
+├── app/                # 共享 React 前端
+│   └── src/
+│       ├── components/
+│       ├── lib/
+│       └── hooks/
+├── backend/            # FastAPI 后端
+│   ├── app.py
+│   ├── main.py
+│   ├── config.py
+│   ├── models.py
+│   ├── server.py
+│   ├── routes/
+│   ├── services/
+│   ├── backends/
+│   ├── database/
+│   └── utils/
+├── tauri/src-tauri/    # Tauri 外壳（Rust）
+├── web/                # Web 部署入口
+└── scripts/            # 构建与打包脚本
+```
+
+### 请求流向
+
+HTTP 请求 → **routes/**（校验输入）→ **services/**（业务逻辑）→ **backends/**（TTS/STT 推理）→ **utils/**（音频处理）。
+
+### 关键模块
+
+- **`app.py`** — FastAPI 应用工厂、CORS、生命周期事件
+- **`main.py`** — 入口（导入 app 并运行 uvicorn）
+- **`server.py`** — Tauri sidecar 启动器、parent-pid 看门狗
+- **`services/generation.py`** — 用单个函数承载所有生成模式
+- **`backends/`** — TTS/STT 引擎实现（MLX、PyTorch 等）
+
+## 模型下载
+
+模型在首次使用时从 HuggingFace Hub 自动下载，进度实时推送到界面：
+
+- **Whisper**（转录）— 首次转录时自动下载
+- **TTS 引擎** — 首次生成时自动下载。体积从 82 M（Kokoro，约 350 MB）到 3 B（TADA，约 8 GB）不等
+
+完整清单见[模型管理](/docs/developer/model-management)。首次使用因下载会明显变慢，之后走缓存。
+
+## 生成 OpenAPI 客户端
+
+后端启动后即可生成 TypeScript 客户端：
+
+```bash title="终端"
+just generate-api
+```
+
+该命令下载 OpenAPI schema 并在 `app/src/lib/api/` 生成客户端代码。API 变更后重新执行。
+
+## 手动搭建
+
+不依赖 Just 时可以按下面三步走。
+
+### 1. 安装 JS 依赖
+
+```bash title="终端"
+bun install
+```
+
+这一步会为 `app/`（共享前端）、`tauri/`（桌面外壳）、`web/`（Web 部署外壳）安装依赖。
+
+### 2. 配置 Python 后端
+
+```bash title="终端"
+cd backend
+
+# 创建虚拟环境（Python 3.12）
+python3.12 -m venv venv   # macOS/Linux
+py -3.12 -m venv venv     # Windows
+
+# 激活虚拟环境
+source venv/bin/activate  # macOS/Linux
+venv\Scripts\activate     # Windows
+
+# 安装依赖
+pip install -r requirements.txt
+
+# Apple Silicon：安装 MLX 依赖
+pip install -r requirements-mlx.txt
+
+# Chatterbox 固定 numpy<1.26 / torch==2.6，在 3.12+ 上会冲突
+pip install --no-deps chatterbox-tts
+
+# HumeAI TADA 固定 torch>=2.7,<2.8，与项目的 torch>=2.1 冲突
+pip install --no-deps hume-tada
+
+# 从源码安装 Qwen3-TTS
+pip install git+https://github.com/QwenLM/Qwen3-TTS.git
+
+# PyInstaller 与检查工具
+pip install pyinstaller ruff pytest pytest-asyncio
+```
+
+### 3. 启动开发
+
+终端 A 启动后端：
+
+```bash title="终端"
+cd backend
+source venv/bin/activate
+uvicorn main:app --reload --port 17493
+```
+
+终端 B 启动桌面应用：
+
+```bash title="终端"
+cd tauri
+bun run tauri dev
+```
+
+## 故障排查
+
+### 后端无法启动
+
+- 确认 Python 是 3.12
+- 确认虚拟环境已激活：`source backend/venv/bin/activate`
+- 补装依赖：`pip install -r requirements.txt`
+- 确认 `17493` 端口空闲
+
+### Tauri 构建失败
+
+- 确认 Rust 已安装：`rustc --version`
+- 清掉构建缓存：`cd tauri/src-tauri && cargo clean`
+- 重新执行 `just dev`
+
+### OpenAPI 客户端生成失败
+
+- 确认后端在运行：`curl http://localhost:17493/openapi.json`
+- 检查网络连通性，并确认 `localhost:17493` 可访问
+
+更多问题见[故障排查](/docs/getting-started/troubleshooting)。

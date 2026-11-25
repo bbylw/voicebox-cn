@@ -1,0 +1,127 @@
+---
+title: 转录子系统
+description: Whisper 在 Voicebox 里的两条推理路径、模型规格与接口约定。
+sidebar:
+  order: 6
+---
+
+转录用 OpenAI 的 Whisper 做语音识别，支撑两条链路：给声音样本自动填 `reference_text`，以及面向前端和 API 的按需转录端点。Apple Silicon 上走 MLX-Whisper（约快 8 倍），其他平台走 PyTorch。
+
+## 两条链路
+
+1. **参考文本自动填充** — 用户录制或上传声音样本后，后端转录并把文本写进 `reference_text`，供克隆使用。
+2. **按需转录** — `POST /transcribe` 处理任意音频。
+
+## 架构
+
+转录和 TTS 共用同一套后端抽象。`STTBackend` 协议定义在 `backend/backends/__init__.py`：
+
+```python
+@runtime_checkable
+class STTBackend(Protocol):
+    async def load_model(self, model_size: str) -> None: ...
+    async def transcribe(
+        self,
+        audio_path: str,
+        language: Optional[str] = None,
+        model_size: Optional[str] = None,
+    ) -> str: ...
+    def unload_model(self) -> None: ...
+    def is_loaded(self) -> bool: ...
+```
+
+当前有两个实现：
+
+- **`MLXSTTBackend`**（`backends/mlx_backend.py`）— 用 `mlx_audio.stt.load()`，Apple Silicon 上默认
+- **`PyTorchSTTBackend`**（`backends/pytorch_backend.py`）— 用 `transformers.WhisperForConditionalGeneration`，其他平台默认
+
+`get_stt_backend()` 依据 `get_backend_type()` 选择实现，`backend/services/transcribe.py` 只是一层很薄的转发。
+
+## 模型规格
+
+`ModelConfig` 里注册了五个 Whisper 变体：
+
+| 模型 | HuggingFace 仓库 | 体积 | 说明 |
+| --- | --- | --- | --- |
+| **Base** | `openai/whisper-base` | 约 300 MB | 默认；快，质量够用 |
+| **Small** | `openai/whisper-small` | 约 500 MB | 质量更好，仍然快 |
+| **Medium** | `openai/whisper-medium` | 约 1.5 GB | 高质量 |
+| **Large** | `openai/whisper-large-v3` | 约 3 GB | 质量最好，CPU 上慢 |
+| **Turbo** | `openai/whisper-large-v3-turbo` | 约 1.5 GB | Large 档质量，比 Large 快约 5 倍 |
+
+`tiny` 没有暴露：相对 `base` 的质量差距不值得那点下载量。在 Apple Silicon 上用 Turbo + MLX-Whisper，v0.1.10 把用户感知的转录延迟从约 20 秒降到 2–3 秒。
+
+## 语言提示
+
+Whisper 能自动识别语言，但给提示在短音频上更准：
+
+```python
+text = await backend.transcribe(audio_path, language="en")
+```
+
+接受的是标准 Whisper 语言码（99 种以上）。前端优先传配置文件的语言，没有就让 Whisper 自动检测。
+
+## 模型加载
+
+两个后端都是惰性的：首次使用时加载并常驻内存，切换尺寸会先卸载旧模型。MLX 走 `mlx_audio.stt.load(hf_repo)`，PyTorch 走：
+
+```python
+WhisperProcessor.from_pretrained(hf_repo)
+WhisperForConditionalGeneration.from_pretrained(hf_repo).to(device)
+```
+
+两条路径都会调用 `backends/base.py` 的 `model_load_progress()`，所以首次使用下载时前端能看到实时进度。
+
+## 音频预处理
+
+Whisper 要求单声道 16 kHz。`backend/utils/audio.py` 会透明地完成重采样与格式转换：
+
+- **格式：** WAV、MP3、FLAC、OGG、M4A（经 soundfile / librosa）
+- **目标：** 单声道、16 kHz、float32
+
+超过 Whisper 30 秒窗口的音频由底层库自带的分块逻辑处理，Voicebox 代码里不做切分。
+
+## 接口
+
+| 方法 | 端点 | 说明 |
+| --- | --- | --- |
+| POST | `/transcribe` | 转录上传的音频文件 |
+
+请求为 multipart 表单：`file`（音频文件）、`language`（可选）、`model_size`（可选，默认 `base`）。响应：
+
+```json
+{
+  "text": "Hello, this is a test transcription.",
+  "duration": 3.5
+}
+```
+
+## 使用场景
+
+### 克隆用的参考文本
+
+1. 用户上传或录制音频。
+2. 后端写入音频文件并内部调用 `/transcribe`（或由前端单独调用）。
+3. 返回的文本写入 `profile_samples` 的 `reference_text`。
+4. 需要参考文本的克隆引擎（Chatterbox、TADA 等）从这里读取。
+
+### 质量建议
+
+- 5 秒以内的短音频务必给语言提示，自动检测在这么少的音频上不可靠。
+- 噪声大的音频用 Turbo 或 Large，Base 在困难输入上容易产生幻觉。
+- 尽量用干净音频：转录错误会变成参考文本错误，进而变成克隆错误。
+
+## 显存管理
+
+`unload_model()` 会丢弃模型引用，必要时清空 CUDA 缓存；`/models/unload` 提供了手动入口。`get_stt_backend()` 每个后端只返回一个单例，多个调用方共用一个 Whisper 实例。
+
+## 错误处理
+
+| 报错 | 原因 | 处理 |
+| --- | --- | --- |
+| 模型未找到 | 首次运行遇上网络问题 | 重试并检查连通性 |
+| 加载时 OOM | 大模型配小显存 | 换 Small 或 Turbo |
+| 结果为空 | 音频里没有人声 | 确认输入有语音，检查裁剪 |
+| 语言识别错 | 自动检测失准 | 传 `language` 提示 |
+
+模型下载、加载与释放的完整机制见[模型管理](/docs/developer/model-management)，平台加速见 [GPU 加速](/docs/getting-started/gpu-acceleration)。

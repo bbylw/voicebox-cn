@@ -1,0 +1,133 @@
+---
+title: 通用约定
+description: 基础 URL、鉴权、错误格式、CORS，以及根路径与健康检查。
+sidebar:
+  order: 5
+---
+
+所有接口共享同一套基础约定：固定的本机地址、不带鉴权、统一的错误结构。这一页先把这些讲清楚，再给出两个最基础的端点——根路径与健康检查。
+
+## 约定
+
+### 基础 URL
+
+`http://127.0.0.1:17493`。桌面应用启动后由内置后端监听这个地址；Docker 或远程模式部署的实例换成对应的主机与端口即可。
+
+### 鉴权
+
+没有鉴权。所有端点都不需要 token 或 API key，安全性依赖服务只绑定回环地址。把服务暴露到局域网或公网时，请自行在前面加一层带鉴权的反向代理。
+
+### 请求与响应
+
+- 请求体和响应体默认是 UTF-8 编码的 JSON；上传音频的端点用 `multipart/form-data`。
+- 时间字段是 ISO 8601 字符串，UTC。
+- 时长以秒为单位（`duration`、`total_duration_seconds`），体积以 MB 为单位（`size_mb`），进度是 0–100 的百分比。
+- 业务字段一律用 snake_case。
+
+### 错误格式
+
+业务错误由 `detail` 承载一个字符串：
+
+```json title="404 Not Found"
+{
+  "detail": "Profile not found"
+}
+```
+
+请求体或查询参数校验失败时返回 422，`detail` 变成数组，逐项给出出错位置：
+
+```json title="422 Unprocessable Entity"
+{
+  "detail": [
+    {
+      "loc": ["body", "text"],
+      "msg": "String should have at least 1 character",
+      "type": "string_too_short"
+    }
+  ]
+}
+```
+
+| 状态码 | 含义 |
+| --- | --- |
+| 200 | 成功 |
+| 202 | 已受理，稍后重试（目前用于 `POST /transcribe` 的模型下载） |
+| 400 | 请求本身有问题，例如未知 ID、参数冲突 |
+| 404 | 资源不存在 |
+| 413 | 上传文件超过大小限制 |
+| 422 | 请求体或查询参数校验失败 |
+| 500 | 服务端执行失败，`detail` 是底层错误信息 |
+| 503 | 依赖缺失，例如导出 MP3 时找不到 ffmpeg |
+
+### CORS
+
+允许的来源默认为 `http://localhost:5173`、`http://127.0.0.1:5173`、`http://localhost:17493`、`http://127.0.0.1:17493`，以及 Tauri webview 的 `tauri://localhost`、`https://tauri.localhost`、`http://tauri.localhost`。允许携带凭据，方法与请求头不限制。
+
+需要从别的源访问时，启动前设置 `VOICEBOX_CORS_ORIGINS`，用逗号分隔追加，例如 `VOICEBOX_CORS_ORIGINS=http://192.168.1.20:3000`。不在名单里的源，浏览器会拦掉响应；`curl` 和本机脚本不受影响。
+
+## `GET /`
+
+确认服务在运行，返回服务名与版本号。
+
+```json title="200 OK"
+{
+  "message": "voicebox API",
+  "version": "0.6.0"
+}
+```
+
+Docker 部署且打包了前端时，这个路径直接返回单页应用的 `index.html`（`text/html`），不再是 JSON。
+
+```bash title="终端"
+curl http://127.0.0.1:17493/
+```
+
+错误：无业务错误码；后端未启动时连接被拒绝。
+
+## `GET /health`
+
+健康检查，报告模型加载状态与 GPU 信息，适合做启动探测。
+
+```json title="200 OK"
+{
+  "status": "healthy",
+  "model_loaded": true,
+  "model_downloaded": true,
+  "model_size": "1.7B",
+  "gpu_available": true,
+  "gpu_type": "CUDA (NVIDIA GeForce RTX 4070)",
+  "vram_used_mb": 3120.5,
+  "backend_type": "pytorch",
+  "backend_variant": "cuda",
+  "supports_rocm": false,
+  "gpu_compatibility_warning": null,
+  "cloud_enabled": false
+}
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `status` | 固定为 `healthy` |
+| `model_loaded` | 默认 TTS 模型是否已加载进内存 |
+| `model_downloaded` | 默认 Qwen TTS 1.7B 是否已在缓存中，无法判断时为 `null` |
+| `model_size` | 当前加载的模型尺寸，未加载时为 `null` |
+| `gpu_available` | 是否有可用的加速设备（CUDA、MPS、XPU、DirectML 或 MLX） |
+| `gpu_type` | 形如 `CUDA (NVIDIA GeForce RTX 4070)`、`MPS (Apple Silicon)`、`Metal (Apple Silicon via MLX)`，没有 GPU 时为 `null` |
+| `vram_used_mb` | 已分配的显存，单位 MB，仅 CUDA 与 XPU 有值 |
+| `backend_type` | `pytorch` 或 `mlx` |
+| `backend_variant` | `cpu`、`cuda`、`rocm` 或 `xpu` |
+| `supports_rocm` | 当前平台是否适用 ROCm 后端 |
+| `gpu_compatibility_warning` | 显卡架构不受支持时的提示文本 |
+| `cloud_enabled` | 是否启用 Cloud 功能（由 `VOICEBOX_CLOUD_ENABLED` 控制） |
+
+```bash title="终端"
+curl http://127.0.0.1:17493/health
+```
+
+错误：无业务错误码；后端未启动时连接被拒绝。
+
+## 相关页面
+
+- [语音生成](/docs/api/generation)：`POST /generate` 与音频下载。
+- [声音配置文件](/docs/api/profiles)：配置文件的增删改查。
+- [远程模式](/docs/getting-started/remote-mode)：把服务交给另一台机器。

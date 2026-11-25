@@ -1,0 +1,146 @@
+---
+title: 效果管线
+description: 基于 Pedalboard 的音频后处理、效果链校验与生成版本管理。
+sidebar:
+  order: 5
+---
+
+效果管线基于 Spotify 的 Pedalboard 做 DSP 处理。每条生成结果保留一个干净版本，另外可以派生任意多个应用了不同效果链的加工版本，互不影响。
+
+## 核心概念
+
+- **效果链（effects chain）** — 可 JSON 序列化的效果配置数组，按顺序依次应用
+- **生成版本（generation version）** — 一次生成的加工变体，有独立的音频文件与效果链
+- **效果预设（preset）** — 保存下来的效果链配置，分内置与用户自建
+- **干净版本** — 未经处理的原始音频
+
+流程是：TTS 生成干净音频 → 效果链处理 → 结果保存为新的生成版本。
+
+## 效果类型与参数
+
+| 效果 | 参数 | 范围 | 默认 |
+| --- | --- | --- | --- |
+| **Chorus / Flanger**（调制延迟；`centre_delay_ms` 短偏 flanger，长偏 chorus） | `rate_hz` | 0.01–20 | 1.0 |
+| | `depth` | 0.0–1.0 | 0.5 |
+| | `feedback` | 0.0–0.95 | 0.0 |
+| | `centre_delay_ms` | 0.5–50 | 7.0 |
+| | `mix` | 0.0–1.0 | 0.5 |
+| **Reverb**（房间混响） | `room_size` | 0.0–1.0 | 0.5 |
+| | `damping` | 0.0–1.0 | 0.5 |
+| | `wet_level` | 0.0–1.0 | 0.33 |
+| | `dry_level` | 0.0–1.0 | 0.4 |
+| | `width` | 0.0–1.0 | 1.0 |
+| **Delay**（回声 / 延迟线） | `delay_seconds` | 0.01–2.0 | 0.3 |
+| | `feedback` | 0.0–0.95 | 0.3 |
+| | `mix` | 0.0–1.0 | 0.3 |
+| **Compressor**（动态范围压缩，稳定响度） | `threshold_db` | -60–0 | -20.0 |
+| | `ratio` | 1.0–20.0 | 4.0 |
+| | `attack_ms` | 0.1–100 | 10.0 |
+| | `release_ms` | 10–1000 | 100.0 |
+| **Gain**（增益） | `gain_db` | -40–40 | 0.0 |
+| **High-Pass Filter**（去低频） | `cutoff_frequency_hz` | 20–8000 | 80.0 |
+| **Low-Pass Filter**（去高频） | `cutoff_frequency_hz` | 200–20000 | 8000.0 |
+| **Pitch Shift**（变调） | `semitones` | -12–12 | 0.0 |
+
+## 生成版本
+
+每条生成以干净版本起始，用户可以对它应用效果链生成加工版本。
+
+| 字段 | 含义 |
+| --- | --- |
+| `id` | 版本唯一标识 |
+| `label` | 用户起的名字，如「robotic」「with reverb」 |
+| `audio_path` | 加工后音频的路径 |
+| `effects_chain` | 效果配置的 JSON 数组 |
+| `source_version_id` | 派生自哪个版本 |
+| `is_default` | 是否为该生成的默认音频 |
+
+文件布局：
+
+```text title="data/generations"
+data/generations/
+├── {generation_id}.wav
+└── {generation_id}_{version_id}.wav
+```
+
+默认版本规则：每条生成有且只有一个默认版本；生成记录的 `audio_path` 始终指向默认版本的音频；删除默认版本时会自动提升另一个版本。
+
+## 效果预设
+
+内置预设：
+
+- **Robotic** — 用 flanger 式 chorus 做出的金属机器人声
+- **Radio** — 带通滤波加轻度压缩的 AM 电台声
+- **Echo Chamber** — 大空间混响加拖尾回声
+- **Deep Voice** — 变调降调后再压缩，增加厚度
+
+用户预设通过效果 UI 创建，存在 SQLite 里，可随时套用；内置预设不可修改或删除。
+
+## API 端点
+
+### 效果与预设
+
+| 端点 | 方法 | 说明 |
+| --- | --- | --- |
+| `/effects/available` | GET | 列出所有效果类型及参数定义 |
+| `/effects/presets` | GET | 列出全部预设（内置 + 用户） |
+| `/effects/presets` | POST | 新建用户预设 |
+| `/effects/presets/:id` | GET | 取单个预设 |
+| `/effects/presets/:id` | PUT | 更新用户预设 |
+| `/effects/presets/:id` | DELETE | 删除用户预设 |
+| `/effects/preview/:generation_id` | POST | 预览效果，返回音频流 |
+
+### 生成版本
+
+| 端点 | 方法 | 说明 |
+| --- | --- | --- |
+| `/generations/:id/versions` | GET | 列出该生成的全部版本 |
+| `/generations/:id/versions/apply-effects` | POST | 应用效果链并创建新版本 |
+| `/generations/:id/versions/:version_id/set-default` | PUT | 设为默认版本 |
+| `/generations/:id/versions/:version_id` | DELETE | 删除版本 |
+
+应用效果时的请求体字段：`effects_chain`（效果对象数组）、`label`（版本名）、`set_as_default`（是否设为默认）、`source_version_id`（源版本，可选）。
+
+## 实现
+
+| 文件 | 职责 |
+| --- | --- |
+| `backend/utils/effects.py` | 效果注册表、参数校验、音频处理 |
+| `backend/services/versions.py` | 生成版本的增删改查 |
+| `backend/services/effects.py` | 效果预设的增删改查 |
+| `backend/routes/effects.py` | 效果与版本的 API 端点 |
+
+`utils/effects.py` 里的 `EFFECT_REGISTRY` 字典定义每个效果的 `cls`、`label`、`description` 与 `params`。应用前会校验效果链：效果类型必须在注册表中，参数必须落在 min/max 区间内且类型为数字，未知参数直接拒绝。
+
+处理本身交给 Pedalboard，并放到线程里跑，避免阻塞事件循环：
+
+```python
+from pedalboard import Pedalboard
+
+board = build_pedalboard(effects_chain)
+processed = await asyncio.to_thread(lambda: board(audio, sample_rate))
+```
+
+前端相关的组件：效果链编辑器在 `app/src/components/Effects/`，版本选择器在生成详情视图，预设管理器在效果面板，实时预览按钮会流式返回处理后的音频；效果链以 JSON 数组存储，应用时才通过 POST 端点落成新版本。
+
+## 新增效果类型
+
+1. 在 `backend/utils/effects.py` 的 `EFFECT_REGISTRY` 中加一条，填 `cls`、`label`、`description` 与 `params`，并从 Pedalboard 导入对应的效果类。
+2. 需要的话同步更新前端类型。
+
+加完之后 `/effects/available` 会自动返回它，链编辑器里也能直接选到。
+
+## 实践建议
+
+**顺序很重要。** 推荐的处理顺序：
+
+1. 变调（需要时）
+2. 高通 / 低通滤波
+3. Chorus / flanger 等时间类效果
+4. Reverb / delay 等空间类效果
+5. Compressor
+6. Gain（最终响度调整）
+
+**CPU 开销：** 效果在生成时实时计算，变调与混响最费 CPU，复杂效果链建议先预览再应用。
+
+**存储：** 每个版本都会生成独立音频文件；干净版本始终保留，可随时回退；不再需要的加工版本可以删掉以回收空间。

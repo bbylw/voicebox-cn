@@ -1,0 +1,366 @@
+---
+title: 故障排查
+description: 按分类整理 Voicebox 使用与开发中的常见问题、原因和解决步骤。
+sidebar:
+  order: 6
+---
+
+这一页按问题出现的环节分类：安装、后端服务、生成、音频、开发、数据库、模型、性能、更新和远程模式。每条先写现象，再给原因和做法。
+
+## 安装问题
+
+### macOS 提示「应用已损坏，无法打开」
+
+**原因**：应用没有使用 Apple 开发者证书签名，Gatekeeper 因此拦截。
+
+**解决**：移除隔离属性。
+
+```bash title="终端"
+xattr -cr /Applications/Voicebox.app
+```
+
+### Windows 弹出 SmartScreen 警告
+
+**原因**：未签名的应用在首次运行时会被标记为「无法识别的应用」。
+
+**解决**：点击「更多信息」，再点击「仍要运行」。这是未签名应用的正常表现，后续版本会补上代码签名。
+
+### Linux 上找不到可运行的安装包
+
+**原因**：Linux 构建尚未发布，官方只提供 macOS 与 Windows 安装包。
+
+**解决**：在 Linux 上用 [Docker 部署](/docs/getting-started/docker)，或[从源码构建](/docs/developer/building)后端后配合远程模式使用。
+
+## 后端服务问题
+
+### 后端服务起不来
+
+**现象**：左下角状态指示灯为红色，或提示「Failed to connect to server」。
+
+**原因与解决**：
+
+- **端口被占用**：确认 17493 端口是否已被其他进程占用。
+
+  ```bash title="终端"
+  # macOS/Linux
+  lsof -i :17493
+
+  # Windows
+  powershell -Command "Get-NetTCPConnection -LocalPort 17493 -State Listen"
+  ```
+
+  结束占用端口的进程：
+
+  ```bash title="终端"
+  # macOS/Linux
+  kill -9 <PID>
+
+  # Windows
+  taskkill /PID <PID> /F
+  ```
+
+- **权限不足**：服务二进制可能没有执行权限。
+
+  ```bash title="终端"
+  chmod +x ~/Library/Application\ Support/sh.voicebox.app/backend/voicebox-server
+  ```
+
+- **查看日志**：直接读服务端日志里的报错。
+
+  ```bash title="终端"
+  # macOS
+  tail -f ~/Library/Application\ Support/sh.voicebox.app/logs/server.log
+
+  # Windows
+  type %APPDATA%\sh.voicebox.app\logs\server.log
+  ```
+
+### 日志里的 `flash-attn is not installed` 警告
+
+**现象**：启动时输出 `Warning: flash-attn is not installed. Will only run the manual PyTorch version.`
+
+**原因**：这条警告无害。基于 transformer 的引擎（Chatterbox、Qwen）每次启动都会打印。FlashAttention 是可选加速库，缺失时改用 PyTorch 内置的 SDPA，在现代显卡上吞吐接近 FA2。生成不受影响。
+
+各平台都会出现，原因不同：
+
+- **Windows**：`flash-attn` 没有官方 Windows 支持，源码编译在近期的 CUDA/MSVC 组合上通常失败。
+- **macOS（Apple Silicon）**：FlashAttention 只针对 CUDA，在这里完全不适用，MLX 有自己的注意力算子。
+- **Linux**：安装过程脆弱且对版本敏感，因此没有写进依赖，需要的人自行安装。
+
+**处理（都可选）**：
+
+1. **忽略它（推荐）**：实际执行的是 PyTorch SDPA，在 Ampere/Ada/Hopper 上，SDPA 与 FA2 的吞吐差距只有几个百分点。
+2. **在 Linux 上安装**：`pip install flash-attn --no-build-isolation`，需要匹配的 CUDA 工具链，编译可能超过 20 分钟。
+3. **在 Windows 上用社区 wheel**：官方没有构建，社区维护者提供预编译包，例如 [kingbri1/flash-attention](https://github.com/kingbri1/flash-attention/releases) 与 [bdashore3/flash-attention](https://github.com/bdashore3/flash-attention/releases)。按 CUDA + PyTorch + Python 的精确组合挑选，例如：
+
+   ```bash
+   pip install https://github.com/kingbri1/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu128torch2.8.0cxx11abiFALSE-cp312-cp312-win_amd64.whl
+   ```
+
+   另一种做法是把后端放进 WSL2，使用标准的 Linux wheel。
+
+### 连接超时
+
+**现象**：加载很久，或报「Connection timeout」。
+
+**解决**：重启应用；检查防火墙设置；确认 localhost 可访问。
+
+## 生成问题
+
+### 首次生成非常慢
+
+**现象**：第一次生成耗时 2-5 分钟，进度停在「Loading model...」。
+
+**原因**：首次生成要下载所选引擎的模型并初始化，体积从 350 MB（Kokoro）到 8 GB（TADA 3B）不等。
+
+**解决**：
+
+- 等待首次下载完成，进度在 Settings → Models 里可见
+- 之后的生成复用缓存模型，快得多
+- 检查网络连接
+- 带宽有限时先从小模型开始：Kokoro（约 350 MB）或 LuxTTS（约 300 MB）
+
+### 音质差
+
+**现象**：声音机械、不自然，缺少情绪或语调，或者发音错误。
+
+**解决**：
+
+1. **改善样本**：10-30 秒清晰音频，避开背景噪声，语气保持一致，同一说话人可加多段样本。
+2. **匹配说话风格**：生成结果会模仿样本的语调；样本单调，输出也会单调。
+3. **调整文本格式**：正确使用标点，用逗号制造自然停顿，专有名词保持大小写正确。
+
+### 生成时报「Out of memory」
+
+**现象**：生成崩溃，报 `CUDA out of memory` 或 `RuntimeError: out of memory`。
+
+**解决**：
+
+- **释放显存**：关闭其他占用 GPU 的程序（游戏、剪辑软件、开了 WebGL 的浏览器标签），然后重启 Voicebox。
+- **改用 CPU**：显存不足 6 GB 时，在 Settings → Generation 打开 **Use CPU instead of GPU**。CPU 生成慢 5-10 倍，但占用系统内存而不是显存。
+- **拆小批次**：长文本切成分块逐个生成，不要一次跑完。
+
+### MLX 报「Failed to load the default metallib」（Apple Silicon）
+
+**现象**：生成失败并报 `library not found` 或 `metallib` 错误，日志提示缺少 Metal 着色器库。
+
+**解决**：
+
+- **重建服务二进制**：`just build-server`，构建脚本在 Apple Silicon 上会自动打包 MLX 的 Metal 着色器库。
+- **重装 MLX 依赖**：`pip install -r backend/requirements-mlx.txt`。
+- **确认后端识别**：Settings → Server Status 在 Apple Silicon 上应显示 **Backend: MLX**；显示 **Backend: PYTORCH** 说明 MLX 没装好。
+
+## 音频问题
+
+### 没有声音
+
+**现象**：生成的音频放不出来，或播放按钮没有反应。
+
+**解决**：检查系统音频设置；确认输出设备已连接；导出后用播放器试听。
+
+### 爆音或失真
+
+**现象**：音频带静电噪声、削波或失真。
+
+**解决**：确认输入样本本身没有失真；降低播放音量；用更干净的样本重新生成。
+
+## 开发问题
+
+### 开发模式下后端起不来
+
+**现象**：`just dev-backend` 或 `just dev` 失败，报导入错误或找不到模块。
+
+**原因与解决**：
+
+- **Python 版本**：必须是 Python 3.12。
+
+  ```bash title="终端"
+  python3.12 --version  # macOS/Linux
+  py -3.12 --version    # Windows
+  ```
+
+  虚拟环境固定用 3.12，因为部分依赖还没有 3.13 版本。`just setup` 会重建用错版本创建的虚拟环境，重跑一次通常就能修好。系统里没有可用的 3.12 时：`uv python install 3.12` 在任何平台都可用；macOS 用 `brew install python@3.12`；Debian/Ubuntu 用 `sudo apt install python3.12 python3.12-venv`；Windows 从 [python.org](https://python.org) 安装，或用 `winget install -e --id Python.Python.3.12`，之后用 `py -3.12` 启动器。
+
+- **虚拟环境未激活**：
+
+  ```bash title="终端"
+  # macOS/Linux
+  source backend/venv/bin/activate
+
+  # Windows
+  backend\venv\Scripts\activate
+  ```
+
+  激活后提示符里应出现 `(venv)`。
+
+- **依赖缺失**：最简单的是重跑 `just setup`。手动安装的顺序是：
+
+  ```bash
+  cd backend
+  pip install -r requirements.txt
+  pip install --no-deps chatterbox-tts
+  pip install --no-deps hume-tada
+  pip install git+https://github.com/QwenLM/Qwen3-TTS.git
+  ```
+
+### Tauri 构建失败
+
+**现象**：`bun run tauri build` 失败，出现 Rust 编译错误。
+
+**解决**：
+
+```bash title="终端"
+# 清理构建产物
+cd tauri/src-tauri
+cargo clean
+
+# 更新 Rust
+rustup update
+
+# 重新构建
+cd ../..
+bun run tauri build
+```
+
+### OpenAPI 客户端生成失败
+
+**现象**：`./scripts/generate-api.sh` 失败，报「Failed to fetch schema」。
+
+**解决**：
+
+1. 确认后端在运行：`curl http://127.0.0.1:17493/openapi.json` 应返回 JSON。
+2. 确认 17493 端口没有被其他进程占用。
+3. 手动重新生成：先在一个终端启动后端，再在另一个终端执行脚本。
+
+   ```bash title="终端"
+   cd backend
+   source venv/bin/activate
+   uvicorn main:app --reload --port 17493
+
+   # 另开一个终端
+   ./scripts/generate-api.sh
+   ```
+
+## 数据库问题
+
+### 报「Database is locked」
+
+**现象**：声音配置文件或生成操作失败，出现 SQLite 锁错误。
+
+**解决**：关闭所有 Voicebox 实例，然后删除锁文件。
+
+```bash title="终端"
+# macOS
+rm ~/Library/Application\ Support/sh.voicebox.app/data/voicebox.db-shm
+rm ~/Library/Application\ Support/sh.voicebox.app/data/voicebox.db-wal
+```
+
+### 数据库损坏
+
+**现象**：应用启动即崩溃，数据丢失或损坏。
+
+<Aside type="caution">
+  下面的操作会删除全部声音配置文件与生成历史。能导出的话先导出重要的配置文件。
+</Aside>
+
+```bash title="终端"
+# macOS
+rm ~/Library/Application\ Support/sh.voicebox.app/data/voicebox.db*
+
+# Windows
+del %APPDATA%\sh.voicebox.app\data\voicebox.db*
+```
+
+通配符同时会删掉 SQLite 在 WAL 模式下放在数据库旁边的 `voicebox.db-wal` 与 `voicebox.db-shm` 辅助文件，保证是彻底重置。之后重启应用，会创建新的数据库。
+
+## 模型问题
+
+### 模型下载失败
+
+**现象**：报「Failed to download model」，或卡在「Downloading...」。
+
+**解决**：检查网络连接与 HuggingFace Hub 状态；所在区域访问受限时尝试 VPN；也可以手动下载后放进缓存目录。
+
+```bash
+pip install huggingface_hub
+huggingface-cli download Qwen/Qwen3-TTS-12Hz-1.7B-Base
+```
+
+### 模型版本不对
+
+**现象**：生成质量突然下降，或音色与之前不同。
+
+**解决**：清空模型缓存后重新下载。其他引擎把 `Qwen*` 换成对应的组织前缀，例如 Chatterbox 用 `ResembleAI*`、TADA 用 `HumeAI*`、Kokoro 用 `hexgrad*`；也可以直接调用 API 的 `DELETE /models/{name}`。
+
+```bash title="终端"
+# macOS / Linux
+rm -rf ~/.cache/huggingface/hub/models--Qwen*
+
+# Windows
+rmdir /s %USERPROFILE%\.cache\huggingface\hub\models--Qwen*
+```
+
+## 性能问题
+
+### 有 GPU 但生成慢
+
+**现象**：生成比预期慢，显卡没有被利用起来。
+
+**解决**：
+
+- **确认 CUDA 可用**：`nvidia-smi` 应列出显卡；没有输出就先安装 CUDA 驱动。
+- **确认选对显卡**：多卡机器上在 Settings → Generation → GPU Device 指定正确的设备。
+- **更新驱动**：驱动过旧会拖慢推理，升级到最新的 NVIDIA 驱动。
+- **Apple Silicon 确认 MLX**：Settings → Server Status 应显示 **Backend: MLX**，MLX 在这里比 PyTorch 快 4-5 倍；显示 **Backend: PYTORCH** 就重装 MLX：`pip install -r backend/requirements-mlx.txt`。GPU 可用性应显示为「Metal (Apple Silicon via MLX)」。
+
+### 内存占用过高
+
+**现象**：应用占用大量内存，系统变卡。
+
+**解决**：关闭不用的声音配置文件；清理生成历史；定期重启应用。
+
+## 更新问题
+
+### 更新检查失败
+
+**解决**：确认网络可用，更新信息从 GitHub releases 拉取；确认 `github.com` 没有被防火墙或代理拦截；实在不行直接从 GitHub 下载最新版本手动安装。
+
+### 报「Invalid Signature」
+
+**解决**：重新下载安装包，签名可能在传输中损坏；核对 `.sig` 文件与安装包是否匹配，不匹配就提 issue。
+
+## 远程模式问题
+
+### 连不上远程服务器
+
+**现象**：报「Connection refused」，或找不到远程服务器。
+
+**解决**：
+
+1. 确认远程服务在运行：`curl http://<server-ip>:17493/health`。
+2. 确认端口已开放：Ubuntu/Debian 上用 `sudo ufw allow 17493`。
+3. 确认网络可达：两台机器在同一网络（本地服务器场景）；用 IP 而不是主机名；尝试 `ping <server-ip>`。
+
+## 仍有问题
+
+1. **先看已有 issue**：[github.com/jamiepine/voicebox/issues](https://github.com/jamiepine/voicebox/issues)。
+2. **提新的 issue**：附上操作系统、Voicebox 版本、复现步骤、报错信息或日志。
+3. **Discord**：[discord.gg/voicebox](https://discord.gg/voicebox)（即将开放）。
+
+## 诊断信息
+
+报告问题时请附上这些信息：
+
+```bash title="终端"
+# Voicebox 版本：应用内查看 Settings → About
+
+# 操作系统
+uname -a      # macOS/Linux
+systeminfo    # Windows
+
+# Python 版本（开发相关问题）
+python --version
+
+# 显卡信息（生成相关问题）
+nvidia-smi    # NVIDIA 显卡
+```

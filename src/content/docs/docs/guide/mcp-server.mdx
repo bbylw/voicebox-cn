@@ -1,0 +1,283 @@
+---
+title: MCP 服务器
+description: 让 Claude Code、Cursor 等 MCP 智能体用克隆声音说话。
+sidebar:
+  order: 11
+---
+
+Voicebox 内置一个 **Model Context Protocol** 服务器，本机 AI 智能体可以直接调用你的 Voicebox：用某个声音配置文件朗读文本、转录音频、列出 captures 或配置文件。服务器与 Voicebox 其余部分跑在同一进程里，通过 Streamable HTTP 挂在 `/mcp` 上。
+
+智能体请求说话 → Voicebox 从你的扬声器播放 → 屏幕上的胶囊在整个播放期间显示声音名称，你始终知道机器在发出什么声音。
+
+<Aside type="note" title="0.5.0 引入">
+MCP 在 0.5.0 与[全局听写](/docs/guide/dictation)、[声音人格](/docs/guide/voice-personalities)一起推出。设计目标是「本机每个智能体的本地声音层」——采集你声音的同一个应用，也能用你克隆的任意声音配置文件生成回复。
+</Aside>
+
+## 快速安装
+
+### Claude Code
+
+```bash title="终端"
+claude mcp add voicebox \
+  --transport http \
+  --url http://127.0.0.1:17493/mcp \
+  --header "X-Voicebox-Client-Id: claude-code"
+```
+
+### Cursor / Windsurf / VS Code MCP / 任意 HTTP MCP 客户端
+
+把这个放进客户端的 MCP 配置（通常是 `.mcp.json` 或设置界面）：
+
+```json title=".mcp.json"
+{
+  "mcpServers": {
+    "voicebox": {
+      "url": "http://127.0.0.1:17493/mcp",
+      "headers": { "X-Voicebox-Client-Id": "cursor" }
+    }
+  }
+}
+```
+
+把 `cursor` 改成你希望它出现在 **Settings → MCP** 里的名字。这个值只是按客户端绑定声音用的标识，不是密钥，也不是凭证。
+
+### 只支持 stdio 的客户端
+
+桌面应用自带一个 stdio shim 二进制 `voicebox-mcp`。把客户端指向这个二进制的绝对路径：
+
+<Tabs>
+  <TabItem label="macOS">
+
+```json
+{
+  "mcpServers": {
+    "voicebox": {
+      "command": "/Applications/Voicebox.app/Contents/MacOS/voicebox-mcp",
+      "env": { "VOICEBOX_CLIENT_ID": "claude-desktop" }
+    }
+  }
+}
+```
+
+  </TabItem>
+  <TabItem label="Windows">
+
+```json
+{
+  "mcpServers": {
+    "voicebox": {
+      "command": "C:\\Program Files\\Voicebox\\voicebox-mcp.exe",
+      "env": { "VOICEBOX_CLIENT_ID": "claude-desktop" }
+    }
+  }
+}
+```
+
+  </TabItem>
+  <TabItem label="Linux">
+
+```json
+{
+  "mcpServers": {
+    "voicebox": {
+      "command": "/opt/voicebox/voicebox-mcp",
+      "env": { "VOICEBOX_CLIENT_ID": "claude-desktop" }
+    }
+  }
+}
+```
+
+  </TabItem>
+</Tabs>
+
+Shim 最多等待 30 秒让 Voicebox 后端起来，然后把 stdio 上的 JSON-RPC 代理到 Streamable HTTP。Voicebox 必须在运行，shim 才连得上。
+
+## 工具
+
+| 工具 | 用途 |
+| --- | --- |
+| `voicebox_speak` | 用某个声音配置文件朗读文本，返回 `generation_id` 供轮询。 |
+| `voicebox_transcribe` | 对 base64 音频或本地绝对路径做 Whisper 转录。 |
+| `voicebox_list_captures` | 分页列出最近的 captures 及其转录。 |
+| `voicebox_list_profiles` | 列出可用的声音配置文件（克隆与预设）。 |
+
+### `voicebox_speak`
+
+```ts
+voicebox_speak({
+  text: "Deploy complete.",
+  profile?: "Morgan",            // 名称或 id；省略时走按客户端绑定，再走全局默认
+  engine?: "qwen",               // qwen | qwen_custom_voice | luxtts | chatterbox | chatterbox_turbo | tada | kokoro
+  personality?: true,            // TTS 前用配置文件的人格 LLM 改写；默认值来自按客户端绑定
+  language?: "en",
+})
+```
+
+返回：
+
+```json
+{
+  "generation_id": "…",
+  "status": "generating",
+  "profile": "Morgan",
+  "source": "mcp",
+  "poll_url": "/generate/<id>/status"
+}
+```
+
+- **普通 TTS**——`personality: false`（或省略，且绑定默认值为 false）。文本原样朗读。
+- **人格模式**——`personality: true`，且配置文件必须设置过人格提示词。LLM 先把文本按角色改写，再交给 TTS。见[声音人格](/docs/guide/voice-personalities)。
+
+### `voicebox_transcribe`
+
+```ts
+voicebox_transcribe({
+  audio_base64?: "<base64>",    // 与下一项二选一
+  audio_path?: "/absolute/path/to/file.wav",
+  language?: "en",
+  model?: "turbo",              // base | small | medium | large | turbo
+})
+```
+
+返回 `{ text, duration, language, model }`。两种方式都有 200 MB 上限。
+
+### `voicebox_list_captures`
+
+`{ limit?: 20, offset?: 0 }` → `{ captures: [...], total }`。`limit` 会被限制在 1–200。
+
+### `voicebox_list_profiles`
+
+无参数 → `{ profiles: [{ id, name, voice_type, language, has_personality }] }`。
+
+## 声音解析
+
+每次调用 `voicebox_speak`（以及 `POST /speak`）都按以下顺序解析声音配置文件：
+
+<Steps>
+  <Step title="显式的 profile 参数">
+    可以是名称（不区分大小写）或 id。名称 / id 不匹配时调用直接报错——服务器不会悄悄回退。
+  </Step>
+  <Step title="按客户端绑定">
+    通过 `X-Voicebox-Client-Id` 头查找，在 **Voicebox → Settings → MCP** 里管理。可以把 Claude Code 固定到 Morgan、把 Cursor 固定到 Scarlett，等等。
+  </Step>
+  <Step title="全局默认">
+    `capture_settings.default_playback_voice_id`——与 Captures 标签页「以声音播放」用的是同一个默认声音。
+  </Step>
+</Steps>
+
+如果三者都找不到配置文件，工具会返回一个指向 Settings 的错误提示。
+
+## 按客户端绑定
+
+Voicebox → Settings → MCP 会为每个它见过的 `client_id` 显示一行，并给出可复制到各智能体的配置片段。每行包含：
+
+| 字段 | 用途 |
+| --- | --- |
+| `label` | Settings 界面里的显示名称（如「Claude Code」）。 |
+| `profile_id` | 未传 `profile` 时这个客户端使用的声音。 |
+| `default_engine` | 为这个客户端覆盖 TTS 引擎。 |
+| `default_personality` | 为 true 时，`voicebox_speak` 默认走配置文件的人格 LLM（改写）。 |
+| `last_seen_at` | 服务器最后一次收到该客户端请求的时间。 |
+
+`last_seen_at` 由中间件在每次 `/mcp/*` 请求时自动写入——不确定配置有没有生效时可以看它。
+
+## 朗读胶囊
+
+每次由智能体发起的朗读都会像[全局听写](/docs/guide/dictation)一样浮出胶囊，处于新的 `Speaking` 状态，显示声音配置文件名称和已用时间。胶囊刻意做得难以忽略——后台静默 TTS 是信任风险，所以 Voicebox 总会显示正在说什么、用什么声音。
+
+后端在 `GET /events/speak` 上广播 `speak-start` 和 `speak-end` 事件，`DictateWindow` 通过 SSE 订阅。两者都要渲染时，朗读胶囊会覆盖采集会话——不会同时出现两个胶囊。
+
+## 非 MCP 的 REST 接口
+
+`POST /speak` 是同一套代码路径的薄封装，给不走 MCP 的调用方用：shell 脚本、ACP、A2A、GitHub Actions 等。
+
+```bash title="终端"
+curl -X POST http://127.0.0.1:17493/speak \
+  -H 'Content-Type: application/json' \
+  -H 'X-Voicebox-Client-Id: ci' \
+  -d '{"text":"Build complete.","profile":"Morgan"}'
+```
+
+请求体字段与 MCP 工具一致：`text`、可选的 `profile`、`engine`、`personality`、`language`。返回 `GenerationResponse`，形状与 `POST /generate` 相同。
+
+## 兼容 OpenAI 的 API
+
+Voicebox 也在 `POST /v1/audio/speech` 和 `GET /v1/models` 上实现 OpenAI 的文本转语音 API，所以任何已按 OpenAI TTS 写好的东西（官方 `openai` SDK、Open WebUI、Home Assistant、SillyTavern、shell 脚本）只要把 base URL 改过来，就能变成离线本地 TTS。Voicebox 没有 API key：传任意非空字符串即可，`Authorization` 头会被忽略。
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://127.0.0.1:17493/v1", api_key="voicebox")
+
+audio = client.audio.speech.create(
+    model="tts-1",          # 或 Voicebox 引擎："qwen"、"chatterbox"、"kokoro"……
+    voice="Morgan",         # Voicebox 声音配置文件，名称或 id
+    input="Build complete.",
+    response_format="mp3",
+)
+audio.write_to_file("build.mp3")
+```
+
+```bash title="终端"
+curl -X POST http://127.0.0.1:17493/v1/audio/speech \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"tts-1","voice":"Morgan","input":"Build complete."}' \
+  --output build.wav
+```
+
+OpenAI 字段到 Voicebox 的映射：
+
+| 字段 | 在 Voicebox 里的含义 |
+| --- | --- |
+| `voice` | 声音配置文件，按名称（不区分大小写）或 id。省略时按上文的声音解析链处理：先看 `X-Voicebox-Client-Id` 绑定，再退到默认播放声音。没有内置的 `alloy` / `nova` 声音——先创建配置文件（一个名为「Alloy」的 Kokoro 预设配置文件也可以）。 |
+| `model` | TTS 引擎（`qwen`、`qwen_custom_voice`、`luxtts`、`chatterbox`、`chatterbox_turbo`、`tada`、`kokoro`），或 `qwen-tts-0.6B` 这样的模型变体。OpenAI 自己的 `tts-1`、`tts-1-hd`、`gpt-4o-mini-tts` 被接受为「配置文件上配置的引擎」的别名，所以现有客户端代码不用改。`GET /v1/models` 列出所有可接受的 id。模型必须已经下载（Voicebox → Models）。 |
+| `input` | 要朗读的文本，最多 10,000 字符，使用配置文件的语言。长文本会像 Voicebox 其它部分一样按句子边界分块。 |
+| `response_format` | `wav`（默认）、`mp3`、`flac`、`opus`、`pcm`（OpenAI 定义的 24 kHz 原始 16-bit 小端单声道；采样率不同的引擎会重采样）以及 `aac`（要求服务器 `PATH` 上有 `ffmpeg`）。 |
+| `speed` | `0.25`–`4.0`。合成后以保持音高的时间拉伸实现。 |
+| `instructions` | 在支持的引擎（Qwen）上作为 instruct 提示词转发。 |
+
+配置文件的效果链会生效，输出会做响度归一化，与应用内一致。响应一次返回完整音频（暂不支持分块流式），也不会写入生成历史。
+
+错误响应使用 OpenAI 的 `{"error": {"message", "type", "param", "code"}}` 响应体，SDK 抛出的异常会带原因：`voice_not_found`、`voice_required`、`model_not_found`、`model_not_downloaded`、`engine_not_compatible`、`unsupported_format`。参数校验失败返回 `400`，而不是 FastAPI 的 `422`。
+
+<Aside type="caution">
+这个端点与其余 API 共享同样的信任边界：没有鉴权，默认只监听 localhost。如果你为了 Open WebUI 之类的工具把 Voicebox 暴露到网络上，请阅读[远程模式](/docs/getting-started/remote-mode)，并放在防火墙或 VPN 之后。
+</Aside>
+
+## 调试
+
+用 MCP Inspector 直接戳工具，不必绕过智能体：
+
+```bash title="终端"
+npx @modelcontextprotocol/inspector http://127.0.0.1:17493/mcp
+```
+
+先用 `voicebox_list_profiles` 确认连接正常，再用 `voicebox_speak` 做端到端验证——你应该能听到声音，并在 Captures 标签页看到这次生成。
+
+<Aside type="note">
+如果智能体连不上服务器，先确认 Voicebox 正在运行——后端只在桌面应用打开时监听。stdio shim 在 30 秒健康等待结束后，会在客户端侧报 JSON-RPC 错误。
+</Aside>
+
+## 安全
+
+- **仅限本机。** 服务器绑定 `127.0.0.1`。如果确实要把 Voicebox 指到非回环网卡（例如在可信网络里开远程模式），请加 bearer token——它在路线图上，但不在 0.5.0 里。
+- **目前没有鉴权。** 任何能连接回环地址的进程都能调用 MCP。这与 Voicebox 其余 REST API 的信任边界相同，适合单用户本地工具。
+- **`audio_path` 读取不受限制**，同样受这条信任边界约束。如果脚本跑在共享主机上，优先用 `audio_base64`，省得考虑路径沙箱。
+- **声音克隆的同意原则仍然适用。** 见[声音克隆](/docs/guide/voice-cloning)——智能体能调用 `voicebox_speak` 用某人的声音说话，并不改变你克隆谁的声音的伦理。
+
+## 实现说明
+
+- **传输**：Streamable HTTP（MCP 2025-11 版规范，取代旧的 SSE 传输）。Claude Code、Cursor、Windsurf 和 VS Code 的 MCP 扩展都支持。
+- **包命名**：后端包是 `backend/mcp_server/`，不是 `mcp`，避免遮蔽 FastMCP 内部导入的 PyPI `mcp` 包。
+- **依赖**：`fastmcp>=3.0,<4.0`、`sse-starlette>=2.0`。
+- **Lifespan**：挂载 FastMCP 需要在 `FastAPI()` 传入 `lifespan=` 参数——startup/shutdown 事件装饰器与 FastMCP 的 Streamable HTTP 会话管理器不兼容。Voicebox 的 app.py 把两者组合进一个 async 上下文管理器。
+
+代码布局的完整开发者导览见仓库里的 `backend/mcp_server/README.md`。
+
+## 下一步
+
+<CardGrid>
+  <Card title="声音人格" href="/docs/guide/voice-personalities">给需要在说话前按角色改写文本的智能体使用人格模式（`personality: true`）。</Card>
+  <Card title="全局听写" href="/docs/guide/dictation">智能体朗读的胶囊和你听写时看到的是同一个——两个方向共用一套交互。</Card>
+  <Card title="Captures" href="/docs/guide/captures">每次智能体发起的朗读都会连同音频落进 Captures 标签页——回放、下载、再利用。</Card>
+</CardGrid>

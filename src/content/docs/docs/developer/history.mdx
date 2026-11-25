@@ -1,0 +1,199 @@
+---
+title: 生成历史
+description: 生成记录的表结构、写入与查询逻辑、删除级联与导出格式。
+sidebar:
+  order: 11
+---
+
+历史模块记录全部生成的音频，形成可搜索的过往记录。每条生成保存文本、参数与音频文件引用，并可以挂多个应用了不同效果链的版本。
+
+## 数据模型
+
+```python title="generations"
+class Generation(Base):
+    __tablename__ = "generations"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    profile_id = Column(String, ForeignKey("profiles.id"), nullable=False)
+    text = Column(Text, nullable=False)
+    language = Column(String, default="en")
+    audio_path = Column(String, nullable=True)
+    duration = Column(Float, nullable=True)
+    seed = Column(Integer)
+    instruct = Column(Text)
+    engine = Column(String, default="qwen")
+    model_size = Column(String, nullable=True)
+    status = Column(String, default="completed")  # pending | completed | failed
+    error = Column(Text, nullable=True)
+    is_favorited = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+```
+
+加工变体存放在另一张 `generation_versions` 表里：干净版本加任意多个加工版本，结构见[效果管线](/docs/developer/effects-pipeline)。
+
+## 文件存储
+
+生成的音频写在 `data/generations/{generation_id}.wav`。
+
+## 核心函数
+
+### 写入记录
+
+TTS 产出音频后创建历史条目：
+
+```python
+async def create_generation(
+    profile_id: str, text: str, language: str, audio_path: str, duration: float,
+    seed: Optional[int], db: Session, instruct: Optional[str] = None,
+) -> GenerationResponse:
+    db_generation = DBGeneration(
+        id=str(uuid.uuid4()),
+        profile_id=profile_id,
+        text=text,
+        language=language,
+        audio_path=audio_path,
+        duration=duration,
+        seed=seed,
+        instruct=instruct,
+        created_at=datetime.now(UTC),
+    )
+    db.add(db_generation)
+    db.commit()
+    return GenerationResponse.model_validate(db_generation)
+```
+
+### 列表查询
+
+关联配置文件表拿到名字，再按 `profile_id` 与文本搜索过滤，最后按创建时间倒序分页：
+
+```python
+async def list_generations(query: HistoryQuery, db: Session) -> HistoryListResponse:
+    q = db.query(
+        DBGeneration,
+        DBVoiceProfile.name.label("profile_name"),
+    ).join(DBVoiceProfile, DBGeneration.profile_id == DBVoiceProfile.id)
+
+    if query.profile_id:
+        q = q.filter(DBGeneration.profile_id == query.profile_id)
+    if query.search:
+        q = q.filter(DBGeneration.text.like(f"%{query.search}%"))
+
+    total = q.count()
+    q = q.order_by(DBGeneration.created_at.desc())
+    q = q.offset(query.offset).limit(query.limit)
+
+    return HistoryListResponse(items=results, total=total)
+```
+
+### 统计
+
+```python
+async def get_generation_stats(db: Session) -> dict:
+    total = db.query(func.count(DBGeneration.id)).scalar()
+    total_duration = db.query(func.sum(DBGeneration.duration)).scalar()
+    by_profile = db.query(
+        DBGeneration.profile_id,
+        func.count(DBGeneration.id).label("count"),
+    ).group_by(DBGeneration.profile_id).all()
+
+    return {
+        "total_generations": total,
+        "total_duration_seconds": total_duration,
+        "generations_by_profile": {pid: count for pid, count in by_profile},
+    }
+```
+
+## 删除
+
+删除生成会同时删掉数据行与音频文件：
+
+```python
+async def delete_generation(generation_id: str, db: Session) -> bool:
+    generation = db.query(DBGeneration).filter_by(id=generation_id).first()
+    if not generation:
+        return False
+
+    audio_path = Path(generation.audio_path)
+    if audio_path.exists():
+        audio_path.unlink()
+
+    db.delete(generation)
+    db.commit()
+    return True
+```
+
+删除配置文件时会级联删除它的全部生成：
+
+```python
+async def delete_generations_by_profile(profile_id: str, db: Session) -> int:
+    generations = db.query(DBGeneration).filter_by(profile_id=profile_id).all()
+    for generation in generations:
+        Path(generation.audio_path).unlink(missing_ok=True)
+        db.delete(generation)
+    db.commit()
+    return len(generations)
+```
+
+## 导出与导入
+
+导出为 ZIP：`generation.json` 加 `audio.wav`。导入时依次解压归档、校验元数据与音频、生成新 ID、把音频复制进 generations 目录、写入数据库记录。
+
+## API 端点
+
+| 方法 | 端点 | 说明 |
+| --- | --- | --- |
+| GET | `/history` | 带过滤条件列出生成 |
+| GET | `/history/stats` | 聚合统计 |
+| GET | `/history/{id}` | 按 ID 取生成 |
+| DELETE | `/history/{id}` | 删除生成 |
+| GET | `/history/{id}/export` | 导出为 ZIP |
+| GET | `/history/{id}/export-audio` | 只导出音频（`?format=wav\|mp3`；mp3 需要 ffmpeg，否则 503） |
+| POST | `/history/import` | 从 ZIP 导入 |
+
+### 查询参数
+
+```http
+GET /history?profile_id=uuid&search=hello&limit=50&offset=0
+```
+
+| 参数 | 类型 | 默认 | 说明 |
+| --- | --- | --- | --- |
+| `profile_id` | string | null | 按配置文件过滤 |
+| `search` | string | null | 在文本中搜索 |
+| `limit` | int | 50 | 每页条数 |
+| `offset` | int | 0 | 分页偏移 |
+
+### 响应结构
+
+```json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "profile_id": "uuid",
+      "profile_name": "My Voice",
+      "text": "Hello world",
+      "language": "en",
+      "audio_path": "/path/to/audio.wav",
+      "duration": 1.5,
+      "seed": 42,
+      "instruct": null,
+      "engine": "qwen",
+      "model_size": "1.7B",
+      "status": "completed",
+      "error": null,
+      "is_favorited": false,
+      "created_at": "2026-04-18T10:30:00Z"
+    }
+  ],
+  "total": 150
+}
+```
+
+## 与故事的关系
+
+故事通过 `story_items.generation_id` 引用生成记录，因此同一条生成可以被多个故事复用，音频文件不会重复存储。见[故事与时间线](/docs/developer/stories)。
+
+## 存储注意
+
+每条生成都会产生一个 WAV 文件：24 kHz 单声道 16 bit 的 10 秒片段约 480 KB。长期使用需要考虑清理策略，例如自动清理过期生成、按配置文件配额限制，或归档时压缩。

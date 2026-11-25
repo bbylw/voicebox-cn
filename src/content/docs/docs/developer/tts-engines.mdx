@@ -1,0 +1,374 @@
+---
+title: TTS 引擎
+description: 引擎接口、各引擎的能力与限制，以及从依赖调研到打包的新增流程。
+sidebar:
+  order: 3
+---
+
+新增一个 TTS 引擎会触及 4 层、约 10 个文件。接口本身不复杂，真正耗时的是依赖冲突、上游 bug 与 PyInstaller 打包。**在完成阶段 0 之前不要写代码**：v0.2.1 到 v0.2.3 三个补丁版本都在修打包问题，原因就是跳过了依赖调研。
+
+## 引擎接口
+
+每个引擎实现 `backend/backends/__init__.py` 里的 `TTSBackend` Protocol，模型由 `ModelConfig` 描述：
+
+```python title="backend/backends/__init__.py"
+class YourBackend:
+    """必须满足 TTSBackend 协议。"""
+
+    async def load_model(self, model_size: str = "default") -> None: ...
+    async def create_voice_prompt(
+        self, audio_path: str, reference_text: str, use_cache: bool = True
+    ) -> tuple[dict, bool]: ...
+    async def combine_voice_prompts(
+        self, audio_paths: list[str], ref_texts: list[str]
+    ) -> tuple[np.ndarray, str]: ...
+    async def generate(
+        self,
+        text: str,
+        voice_prompt: dict,
+        language: str = "en",
+        seed: int | None = None,
+        instruct: str | None = None,
+    ) -> tuple[np.ndarray, int]: ...
+    def unload_model(self) -> None: ...
+    def is_loaded(self) -> bool: ...
+    def _get_model_path(self, model_size: str) -> str: ...
+```
+
+```python title="ModelConfig 字段"
+ModelConfig(
+    model_name="your-engine",
+    display_name="Your Engine",
+    engine="your_engine",
+    hf_repo_id="org/model-repo",
+    model_size="default",
+    size_mb=3200,
+    needs_trim=False,          # 输出带尾部静音时置 True
+    retries_runaway=False,     # 输出不稳定时按更小分块重试
+    supports_instruct=False,   # 是否支持自然语言指令控制
+    languages=["en", "fr", "de"],
+)
+```
+
+- **`TTS_ENGINES`** — 引擎名到显示名，是随包发布引擎的唯一来源
+- **`get_model_config()` / `get_tts_model_configs()` / `get_all_model_configs()`** — 按名查配置、列出 TTS 或全部变体
+- **`engine_needs_trim()` / `engine_retries_runaway()`** — 决定是否走 `trim_tts_output()`、是否按分块重试
+- **`load_engine_model()`** — 下载并加载，兼容多尺寸引擎
+- **`get_tts_backend_for_engine()`** — 线程安全工厂，双重检查锁，惰性创建并按引擎缓存实例
+
+## 各引擎能力对照
+
+| 引擎键 | 显示名 | 配置文件类型 | 声音提示形态 | 采样率 | 关键限制 |
+| --- | --- | --- | --- | --- | --- |
+| `qwen` | Qwen TTS | 克隆型 | 预计算张量 | 24 kHz | 支持 instruct，但基座会静默丢弃指令文本 |
+| `qwen_custom_voice` | Qwen CustomVoice | 预设型 | 预设音色指针 | 24 kHz | `supports_instruct=True`，指令接到 instruct head |
+| `qwen_voice_design` | Qwen VoiceDesign | 设计型 | 由 `design_prompt` 派生 | 24 kHz | 只有 1.7B 规格，仅 PyTorch，无 MLX 版本 |
+| `luxtts` | LuxTTS | 克隆型 | 预计算张量 | 48 kHz | 缓存键要加前缀 |
+| `chatterbox` | Chatterbox Multilingual | 克隆型 | 延迟文件路径 | 24 kHz | macOS 强制 CPU（MPS 算子缺陷），不做缓存 |
+| `chatterbox_turbo` | Chatterbox Turbo | 克隆型 | 延迟文件路径 | 24 kHz | 手工下载以绕开 `token=True` 的 bug |
+| `tada` | TADA | 克隆型 | 延迟文件路径 | 24 kHz | 依赖 DAC 的 `Snake1d`，需要 shim；配置硬编码受限仓库 |
+| `kokoro` | Kokoro | 预设型 | 预设音色指针 | 24 kHz | 只有预置音色，不做零样本克隆 |
+
+每个引擎还需定几件事：声音提示存预计算张量还是延迟路径；用不用声音提示缓存；设备走 CUDA / MPS / CPU（Chatterbox 在 macOS 上强制 CPU）；下载交给库还是手工 `snapshot_download()`；采样率多少（LuxTTS 是 48 kHz，其余多为 24 kHz）。
+
+### 三种声音提示写法
+
+```python
+# A：预计算张量（Qwen3-TTS、LuxTTS）
+encoded = model.encode_prompt(audio_path)
+return encoded, False  # (prompt_dict, was_cached)
+
+# B：延迟文件路径（Chatterbox、Chatterbox Turbo、TADA）
+return {"ref_audio": audio_path, "ref_text": reference_text}, False
+
+# C：预设音色指针（Kokoro、Qwen CustomVoice）
+return {"voice_type": "preset", "preset_engine": "kokoro", "preset_voice_id": "am_adam"}, False
+
+# 使用缓存时给键加引擎前缀
+cache_key = "yourengine_" + get_cache_key(audio_path, reference_text)
+```
+
+## 分层与改动面
+
+| 层 | 职责 | 需要改动 |
+| --- | --- | --- |
+| `routes/` | 薄 HTTP 处理 | 无（自动分发） |
+| `services/` | 业务逻辑 | 无（自动分发） |
+| `backends/` | 引擎实现 | `your_engine_backend.py` |
+| `utils/` | 共享工具 | 按需 |
+
+## 阶段 0：依赖调研
+
+把模型库及其传递依赖克隆到临时目录，读代码再动手，最后产出一份依赖审计。
+
+### 先读这几处
+
+1. **`setup.py` / `setup.cfg` / `pyproject.toml`** — 看版本固定。若钉死 `torch==2.6.0` 或 `numpy<1.26`，就得用 `--no-deps` 安装并手工列出子依赖（`chatterbox-tts` 就是如此）。
+2. **`__init__.py` 与主模型类** — 追导入链：`from_pretrained()` 是否内部调 `huggingface_hub`、是否传 `token=True`（无本地 token 会崩）；有没有 `from_local()`；默认设备是不是 CUDA；支不支持 MPS。
+3. **所有 `import`** — 递归到叶子依赖，重点找 `inspect.getsource()`、`typeguard` / `@typechecked`（导入期就会调 `inspect.getsource()`）、`importlib.metadata.version()` / `pkg_resources.get_distribution()`（需要 `--copy-metadata`）、`lazy_loader`（需要 `--collect-all` 才能带上 `.pyi`）。
+
+### 扫描与 PyInstaller 不兼容的写法
+
+```bash title="终端"
+grep -rn "inspect.getsource" .        # 冻结后无源码，需要 --collect-all
+grep -rn "@typechecked" .            # typeguard 在导入期调 inspect.getsource
+grep -rn "importlib.metadata" .      # 需要 --copy-metadata
+grep -rn "os.path.dirname(__file__)" .   # 运行时数据文件
+grep -rn "pkg_resources.resource_filename" .
+grep -rn "espeak" .                  # 系统路径，冻结后可能不存在
+grep -rn "torch.load(" .             # 缺 map_location 会在 CPU 构建崩
+grep -rn "token=True" .              # HF token bug
+grep -rn "torch.from_numpy" .        # float64 假设，通常要 .float()
+grep -rn "torch.jit.script" .        # 冻结构建里崩溃
+grep -rn "torchaudio.load" .         # 2.10+ 需要 torchcodec，改用 soundfile
+grep -rn "meta-llama" .              # 硬编码的受限仓库
+```
+
+### 在隔离 venv 里试装，先在 CPU 上跑通
+
+```bash title="终端"
+python -m venv /tmp/engine-venv && source /tmp/engine-venv/bin/activate
+pip install model-package
+pip install model-package torch==2.10 transformers==4.57.3 "numpy>=1.26"   # 冲突就改 --no-deps
+pip show model-package      # 看 Requires:
+pip show -f model-package   # 看实际装了哪些文件（数据文件）
+```
+
+```python
+import numpy as np
+model = ModelClass.from_pretrained("org/model", device="cpu")  # 强制 CPU 暴露 map_location 问题
+audio = np.random.randn(16000).astype(np.float32)
+output = model.generate("Hello world", audio)
+print(output.shape, output.dtype, model.sample_rate)
+```
+
+常见报错：`expected scalar type Float but found Double`（补 float32 转换）、`map_location` 相关（打补丁）、`Unsupported operator aten::...`（跳过 MPS）。
+
+### 审计要写清
+
+PyPI 与非 PyPI 依赖分别是什么；需要哪些 `--collect-all` / `--copy-metadata` / `--hidden-import`；哪些包带运行时数据文件（YAML、预训练权重、音素表、shader）；哪些包去系统路径找数据；要打哪些 monkey patch；输出采样率；下载走 `from_pretrained()` 还是手工 `snapshot_download()`。这份审计就是阶段 1、4、5 的实施计划。
+
+## 阶段 1：后端实现
+
+新建 `backend/backends/<engine>_backend.py`（约 200–300 行）实现上述 Protocol。输出带尾部静音时把 `needs_trim` 设为 `True`，生成服务会自动调用 `trim_tts_output()`。
+
+```python title="backend/backends/__init__.py"
+# 1. 新增 ModelConfig 条目
+ModelConfig(model_name="your-engine", display_name="Your Engine", engine="your_engine",
+            hf_repo_id="org/model-repo", size_mb=3200, needs_trim=False,
+            languages=["en", "fr", "de"]),
+
+# 2. 加入 TTS_ENGINES 字典
+TTS_ENGINES = {..., "your_engine": "Your Engine"}
+
+# 3. 在 get_tts_backend_for_engine() 里加分支
+elif engine == "your_engine":
+    from .your_backend import YourBackend
+    backend = YourBackend()
+```
+
+最后在 `backend/models.py` 把引擎名加进 `GenerationRequest.engine` 的正则，新语言码加进语言正则。
+
+## 阶段 2：路由与服务
+
+注册表就位后，路由与服务层**没有**逐引擎分发点，全部走 `get_model_config()`、`load_engine_model()`、`engine_needs_trim()`、`check_model_loaded()`。除非引擎在生成管线里需要特殊处理，这一层不需要改文件。
+
+## 阶段 3：前端接入
+
+| 文件 | 改动 |
+| --- | --- |
+| `app/src/lib/api/types.ts` | 把引擎名加入 `GenerationRequest` 的 `engine` 联合类型 |
+| `app/src/lib/constants/languages.ts` | 增加 `ENGINE_LANGUAGES` 条目，必要时补 `ALL_LANGUAGES` |
+| `app/src/components/Generation/EngineModelSelector.tsx` | 增加 `ENGINE_OPTIONS`、`ENGINE_DESCRIPTIONS`，以及 `ENGLISH_ONLY_ENGINES` |
+| `app/src/lib/hooks/useGenerationForm.ts` | `engine` 的 Zod 枚举、引擎到模型名映射、载荷构造 |
+| `app/src/components/ServerSettings/ModelManagement.tsx` | `MODEL_DESCRIPTIONS` 描述与 `voiceModels` 过滤条件 |
+
+<Aside type="warning" title="模型命名不要靠猜">
+HuggingFace 仓库名、尺寸标签与 API 模型名并不总是同一套规则。TADA 的 3B 型号叫 `tada-3b-ml` 而不是 `tada-3b`，因为它是多语言变体。映射表按真实仓库名建，不要套 `{engine}-{size}`。
+</Aside>
+
+### 非克隆引擎（预设音色）
+
+**后端：** 在引擎文件里定义 `VOICES` 列表（`(voice_id, display_name, gender, language)` 元组）；`create_voice_prompt()` 返回 `{"voice_type": "preset", "preset_engine": "<engine>", "preset_voice_id": "<id>"}`；`generate()` 读 `voice_prompt.get("preset_voice_id")` 选音色；下载完成后在 `backend/routes/models.py` 调用 `seed_preset_profiles("<engine>")`（定义在 `backend/services/profiles.py`），它会创建 `voice_type="preset"` 的记录。
+
+**前端：** `EngineModelSelector` 按 `selectedProfile.voice_type` 过滤——`"cloned"` 只显示克隆引擎（隐藏 Kokoro），`"preset"` 只显示对应引擎；预设型卡片上显示引擎徽标，选中预设型时引擎自动切换。
+
+**字段：** `voice_type: "preset"`、`preset_engine`、`preset_voice_id`。未来的设计型声音用 `voice_type: "designed"` 加 `design_prompt`，`create_voice_prompt_for_profile()` 已支持返回该描述。
+
+## 阶段 4：依赖
+
+```text title="backend/requirements.txt"
+# 正常 PyPI 包
+some-model-package>=1.0.0
+
+# 版本冲突：--no-deps 安装，再手工列出子依赖（从 pip show 的 Requires: 抄）
+conformer>=0.3.2
+diffusers>=0.31.0
+omegaconf>=2.3.0
+resemble-perth>=0.0.2
+s3tokenizer>=0.1.6
+
+# 非 PyPI 包
+linacodec @ git+https://github.com/ysharma3501/LinaCodec.git
+--find-links https://k2-fsa.github.io/icefall/piper_phonemize.html
+piper-phonemize>=1.2.0
+```
+
+常见冲突固定：`torch==2.6.0`、`numpy<1.26`、`transformers==4.46.3`、钉死版本的 `onnxruntime`。依赖要同步写进四个地方：`backend/requirements.txt`、`justfile`（`setup-python` 与 `setup-python-release` 目标）、`.github/workflows/release.yml`、`Dockerfile`。
+
+## 阶段 5：PyInstaller 打包
+
+最容易出问题的一步。v0.2.1 上线的新引擎（LuxTTS、Chatterbox、Chatterbox Turbo）在开发环境都正常，一到生产构建就失败，因此不要跳过。
+
+| 指令 | 作用 | 何时需要 |
+| --- | --- | --- |
+| `--hidden-import <module>` | 带上静态分析发现不了的模块 | 动态导入、惰性导入、插件式结构 |
+| `--collect-all <package>` | 打包源码 `.py`、数据文件与原生库 | 导入期调 `inspect.getsource()`（如经 `@typechecked` 的 `inflect`），或自带预训练文件（如 `perth` 的 `.pth.tar` + `hparams.yaml`） |
+| `--collect-data <package>` | 只打包数据文件 | YAML 配置、词表 |
+| `--collect-submodules <package>` | 打包全部子模块 | 模块层级深、PyInstaller 会漏 |
+| `--copy-metadata <package>` | 复制 `importlib.metadata` 信息 | 运行时查版本。`requests`、`transformers`、`huggingface-hub`、`tokenizers`、`safetensors`、`tqdm` 已需要 |
+
+```python title="backend/build_binary.py"
+"--hidden-import", "backend.backends.your_engine_backend",
+"--hidden-import", "your_engine_package.inference",
+"--collect-all", "some_dependency_that_uses_inspect_getsource",
+"--copy-metadata", "some_dependency_that_checks_its_own_version",
+```
+
+### 真实故障与修法（v0.2.3 复盘）
+
+| 引擎 | 现象 | 根因 | 修法 |
+| --- | --- | --- | --- |
+| LuxTTS | 导入报 `could not get source code` | `inflect` 经 `typeguard` 的 `@typechecked` 调 `inspect.getsource()`，需要 `.py` 源码而非字节码 | `--collect-all inflect` |
+| LuxTTS | 找不到 `espeak-ng-data` | `piper_phonemize` 的 C 库去 `/usr/share/espeak-ng-data/` 找数据 | `--collect-all piper_phonemize` + 运行时设 `ESPEAK_DATA_PATH` |
+| LuxTTS | Vocos 编解码器里 `inspect.getsource` 报错 | `linacodec`、`zipvoice` 需要源码内省 | `--collect-all linacodec`、`--collect-all zipvoice` |
+| Chatterbox | 水印模型 `FileNotFoundError` | `perth` 自带预训练文件，默认不打包 | `--collect-all perth` |
+| 全部 | `importlib.metadata` 报错 | 冻结包缺少包元数据 | 逐个包加 `--copy-metadata` |
+| 全部 | 下载进度条卡在 0% | 冻结构建里 `huggingface_hub` 按日志级别静默关掉 tqdm | 在 `HFProgressTracker` 强制打开 tqdm 内部计数器 |
+| TADA | DAC 的 `Snake1d` 报 `inspect.getsource` | `@torch.jit.script` 需要函数源码 | 写 `dac_shim.py` 重实现 `Snake1d`，向 `sys.modules` 注册假 `dac.*` 模块 |
+| 全部 | macOS 上 `NameError: name 'obj' is not defined` | Python 3.12.0 的 CPython bug，PyInstaller 重写 code object 时破坏字节码 | 升级到 Python 3.12.13+ |
+| 全部 | `resource_tracker` 子进程崩溃 | 冻结包里的 `multiprocessing` 需要先调 `freeze_support()` | 在 `server.py` 入口加上 |
+
+### 运行时兜底（`backend/server.py`）
+
+有些修法只能在运行时做，且要在任何重量级导入之前：
+
+```python title="backend/server.py"
+import multiprocessing
+multiprocessing.freeze_support()          # 必须先于任何 multiprocessing 调用
+
+if getattr(sys, "frozen", False):          # 把 C 库指向打包目录里的数据
+    _meipass = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+    _espeak_data = os.path.join(_meipass, "piper_phonemize", "espeak-ng-data")
+    if os.path.isdir(_espeak_data):
+        os.environ.setdefault("ESPEAK_DATA_PATH", _espeak_data)
+
+if not _is_writable(sys.stdout):           # Windows 上 --noconsole 会把 stdout 设为 None
+    sys.stdout = open(os.devnull, "w")
+```
+
+### CPU / CUDA / MLX 分支
+
+- **`voicebox-server`**（CPU）排除全部 `nvidia.*`，避免打进去约 3 GB 的 CUDA DLL
+- **`voicebox-server-cuda`** 包含 `torch.cuda` 与 `torch.backends.cudnn`
+- Windows 上若环境装的是 CUDA 版 torch 而当前构建 CPU 版，脚本会临时换 CPU 版，构建完恢复
+- 新引擎导入放在**公共区**，不要塞进 CUDA 或 MLX 条件块，除非确实依赖特定平台
+- Apple Silicon 构建在 `if is_apple_silicon() and not cuda:` 块里带上 MLX 的 `--hidden-import`、`--collect-all mlx`、`--collect-all mlx_audio`
+
+### 冻结包测试
+
+在 `python -m uvicorn` 里能跑不代表打包后能跑。`just build` 后直接运行二进制，测「下载 → 加载 → 生成 → 进度上报」全链路，看 stderr 里的真实错误（Tauri sidecar 从 stderr 抓日志），修完重建。**务必用干净的模型缓存**，否则只验证了生成没验证下载。
+
+## 阶段 6：上游兼容处理
+
+```python
+# torch.load 设备不一致
+_original_torch_load = torch.load
+def _patched_torch_load(*args, **kwargs):
+    kwargs.setdefault("map_location", "cpu")
+    return _original_torch_load(*args, **kwargs)
+torch.load = _patched_torch_load
+
+# float64 / float32 不匹配（librosa 返回 float64）
+original_fn = SomeClass.some_method
+def patched_fn(self, *args, **kwargs):
+    return original_fn(self, *args, **kwargs).float()
+SomeClass.some_method = patched_fn
+
+# HuggingFace token 调用 bug
+from huggingface_hub import snapshot_download
+local_path = snapshot_download(repo_id=REPO, token=None)
+model = ModelClass.from_local(local_path, device=device)
+```
+
+**MPS 算子缺陷** — 不支持就跳过 MPS，`_get_device()` 在 CUDA 不可用时直接返回 `cpu`。
+
+**受限仓库被硬编码成配置来源** — TADA 在 `AlignerConfig` 与 `TadaConfig` 里都写死了 `meta-llama/Llama-3.2-1B`，无 HF 认证时静默失败。换成未受限镜像并改配置对象：
+
+```python
+tokenizer_path = snapshot_download("unsloth/Llama-3.2-1B", token=None)
+config = ModelConfig.from_pretrained(model_path)
+config.tokenizer_name = tokenizer_path
+model = ModelClass.from_pretrained(model_path, config=config)
+```
+
+<Aside type="caution">
+不要 monkey patch `AutoTokenizer.from_pretrained`：它是 classmethod，替换会破坏描述符，连带影响用别的 tokenizer 的引擎（Qwen 也走 `AutoTokenizer`）。一律改 config。
+</Aside>
+
+**`torchaudio.load()` 在 2.10+ 需要 `torchcodec`** — 改用 `soundfile`：`sf.read("audio.wav", dtype="float32")` 后 `torch.from_numpy(data).unsqueeze(0)`。`torchaudio.functional.resample()` 等纯数学函数不受影响。
+
+**`@torch.jit.script` 在冻结构建里崩溃** — 它靠 `inspect.getsource()` 解析源码，而 PyInstaller 不带 `.py`。去掉装饰器；来自上游依赖就写 shim。
+
+### shim 模式
+
+模型库只用到某个巨型依赖的一小块时，用 shim 代替安装。TADA 只用 DAC 的 `Snake1d`（7 行 PyTorch），但 DAC 会拉进 `onnx`、`tensorboard`、`protobuf`、`matplotlib`、`pystoi`，其中 `onnx` 在 macOS 上无法从源码构建：
+
+```python title="backend/utils/dac_shim.py"
+def snake(x, alpha):
+    """Snake 激活，重实现时不带 @torch.jit.script。"""
+    return x + (1.0 / (alpha + 1e-9)) * torch.sin(alpha * x).pow(2)
+
+class Snake1d(nn.Module):
+    def __init__(self, channels):
+        super().__init__()
+        self.alpha = nn.Parameter(torch.ones(1, channels, 1))
+
+    def forward(self, x):
+        return snake(x, self.alpha)
+
+# 注册假 dac.* 模块，让 "from dac.nn.layers import Snake1d" 能导入
+_nn = types.ModuleType("dac.nn")
+_layers = types.ModuleType("dac.nn.layers")
+_layers.Snake1d = Snake1d
+_nn.layers = _layers
+for name, mod in [("dac", types.ModuleType("dac")), ("dac.nn", _nn), ("dac.nn.layers", _layers)]:
+    sys.modules[name] = mod
+```
+
+三条规则：shim 要在模型库之前导入；shim 里不要用 `@torch.jit.script`；只重实现模型真正用到的部分，并核对导入链。
+
+## 候选引擎
+
+`docs/PROJECT_STATUS.md` 是候选引擎的权威清单，也记录了被搁置的原因。当前主要候选：
+
+| 模型 | 优先级 | 体积 | 跨平台 | 特点 |
+| --- | --- | --- | --- | --- |
+| **MOSS-TTS-Nano** | 1 | 0.1 B | 是（CPU 实时） | 48 kHz 立体声，Apache 2.0 |
+| **Voxtral TTS** | 2 | 4 B | 大概率 | `mistralai/Voxtral-4B-TTS-2603`，预设 + 克隆 |
+| **VibeVoice** | 2 | 约 500 M | 是 | 播客式多说话人对白 |
+| **Dia2** | 3 | 待定 | 待定 | 初代 Dia 的继任者 |
+| **Fish Audio S2 Pro** | 3 | 中等 | 是 | 通过内联文本做词级控制 |
+
+**已搁置：** VoxCPM（2B，Apache 2.0）上游要求 CUDA ≥12，MPS 在 issue #232/#248 中已坏，维护者拒绝 CPU 路径（#256）。
+
+## 检查清单
+
+每个阶段全项完成后再进入下一阶段。
+
+- **阶段 0** — 克隆源码并读版本固定；追完导入链；跑完上面的搜索；评估能否用 shim 替代某个依赖；在隔离 venv 里用 CPU 跑通加载与生成；用干净 HF 缓存测一遍；产出书面审计。
+- **阶段 1** — 建 `backend/backends/<engine>_backend.py` 并实现协议；选定声音提示写法；落实阶段 0 找到的全部 monkey patch；设备用 `get_torch_device()`、进度用 `model_load_progress()`（都在 `backends/base.py`）；验证下载、CPU 加载、音频有效、参考音频克隆可用；注册 `ModelConfig`、加进 `TTS_ENGINES`、补工厂分支、更新 `models.py` 正则。
+- **阶段 2–3** — 确认路由与服务无需改动（或写明原因）；更新 `types.ts`、`languages.ts`、`EngineModelSelector.tsx`、`useGenerationForm.ts`、`ModelManagement.tsx`。
+- **阶段 4** — 写入 `requirements.txt`；`--no-deps` 时显式列子依赖；git 依赖写 `@ git+https://...`；自定义索引加 `--find-links`；同步 `justfile`、`release.yml`、`Dockerfile`；在干净 venv 里验证 `pip install` 通过。
+- **阶段 5** — 加 `--hidden-import`（后端模块 + 模型包及关键子模块）；对 `inspect.getsource()`/`@typechecked`、预训练数据、原生数据的包加 `--collect-all`；对用 `importlib.metadata` 的包加 `--copy-metadata`；原生数据路径在 `server.py` 补 `os.environ.setdefault()`；冻结包 + 干净缓存跑通全链路。
+- **阶段 6** — `just dev` 下正常、冻结二进制下正常、目标平台（MLX 用 macOS，CUDA 用 Windows/Linux）验证过、已有引擎无回归。

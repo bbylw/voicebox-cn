@@ -1,0 +1,209 @@
+---
+title: 架构总览
+description: Tauri 外壳、FastAPI 后端与 React 前端的职责与数据流。
+sidebar:
+  order: 2
+---
+
+Voicebox 采用客户端—服务端结构：React 前端负责界面与状态，Python 后端负责 REST API、TTS/STT 推理、SQLite 与音频处理。两者通过 `localhost:17493` 上的 HTTP 通信；生产环境里后端由 PyInstaller 打包成 Tauri sidecar，开发时手工用 `uvicorn` 启动。
+
+## 系统概览
+
+**前端层：** React 应用，负责 UI 组件、Zustand 状态管理与 React Query（TanStack Query）数据获取。
+
+**后端层：** FastAPI 服务，托管 REST API、可插拔的 TTS/STT 引擎注册表、SQLite 数据库与音频处理。
+
+## 前端架构
+
+### 技术栈
+
+- **框架：** React 18 + TypeScript
+- **状态管理：** Zustand store
+- **数据获取：** React Query（TanStack Query）
+- **样式：** Tailwind CSS
+- **音频：** WaveSurfer.js
+- **桌面外壳：** Tauri（Rust）
+
+### 组件结构
+
+```text title="app/src"
+app/src/
+├── components/
+│   ├── Profiles/
+│   ├── Generation/
+│   ├── Stories/
+│   └── ServerSettings/
+├── lib/
+│   ├── api/
+│   ├── constants/
+│   ├── hooks/
+│   └── utils/
+└── stores/
+```
+
+## 后端架构
+
+### 技术栈
+
+- **框架：** FastAPI（Python 3.12）
+- **TTS 引擎：** Qwen3-TTS、Qwen CustomVoice、LuxTTS、Chatterbox、Chatterbox Turbo、TADA、Kokoro
+- **转录：** Whisper（PyTorch 或 MLX-Whisper）
+- **推理后端：** MLX（Apple Silicon）、PyTorch（CUDA / ROCm / XPU / DirectML / CPU）
+- **数据库：** SQLite，通过 SQLAlchemy 访问
+- **音频：** librosa、soundfile、Pedalboard
+
+### 目录结构
+
+```text title="backend"
+backend/
+├── app.py                  # FastAPI 应用工厂
+├── main.py                 # 入口
+├── config.py
+├── models.py               # 请求/响应模型
+├── server.py               # sidecar 启动器
+├── build_binary.py         # PyInstaller 配置
+├── routes/                 # profiles, generate, history, models, channels
+├── services/               # generation, task_queue, profiles, channels
+├── backends/
+│   ├── __init__.py         # Protocol、ModelConfig 注册表、引擎工厂
+│   ├── base.py
+│   ├── pytorch_backend.py
+│   ├── mlx_backend.py
+│   ├── qwen_custom_voice_backend.py
+│   ├── luxtts_backend.py
+│   ├── chatterbox_backend.py
+│   ├── chatterbox_turbo_backend.py
+│   ├── hume_backend.py
+│   └── kokoro_backend.py
+├── database/               # models.py, session.py
+└── utils/                  # audio.py, effects.py
+```
+
+### 请求流向
+
+HTTP 请求进入**路由处理函数**，校验输入后交给**服务函数**；服务通过注册表调用对应的**引擎后端**执行推理，音频后处理走 **utils**（裁剪、重采样、效果）。路由层刻意保持很薄——只做校验、委派与响应格式化，全部业务逻辑在 `services/`。
+
+### 多引擎注册表
+
+新增一个 TTS 引擎只需改 `backends/` 与中央注册表，路由和服务里没有按引擎分支的代码。
+
+- **`TTSBackend` Protocol**（`backends/__init__.py`）— 定义每个引擎必须实现的契约：`load_model`、`create_voice_prompt`、`combine_voice_prompts`、`generate`、`unload_model`、`is_loaded`、`_get_model_path`。
+- **`ModelConfig` dataclass** — 每个模型变体的中央元数据：`model_name`、`display_name`、`engine`、`hf_repo_id`、`size_mb`、`needs_trim`、`languages`、`supports_instruct` 等。
+- **`TTS_ENGINES` dict** — 引擎名（`"qwen"`、`"kokoro"` 等）到显示名的映射。
+- **`get_tts_backend_for_engine(engine)`** — 线程安全的工厂，用双重检查锁惰性创建并缓存后端实例。
+
+随包发布的引擎：
+
+| 引擎键 | 显示名 | 配置文件类型 |
+| --- | --- | --- |
+| `qwen` | Qwen TTS | 克隆型 |
+| `qwen_custom_voice` | Qwen CustomVoice | 预设型 |
+| `luxtts` | LuxTTS | 克隆型 |
+| `chatterbox` | Chatterbox TTS | 克隆型 |
+| `chatterbox_turbo` | Chatterbox Turbo | 克隆型 |
+| `tada` | TADA | 克隆型 |
+| `kokoro` | Kokoro | 预设型 |
+
+完整契约与集成阶段见[TTS 引擎](/docs/developer/tts-engines)，候选引擎的评估进展见仓库里的 `PROJECT_STATUS.md`。
+
+### 关键模块
+
+- **`app.py`** — FastAPI 应用工厂、CORS、生命周期事件
+- **`main.py`** — 入口，导入 app 并运行 uvicorn
+- **`server.py`** — Tauri sidecar 启动器、parent-pid 看门狗、冻结构建的环境准备
+- **`services/generation.py`** — 用单个函数处理所有生成模式（生成、重试、重新生成）
+- **`services/task_queue.py`** — 面向 GPU 推理的串行生成队列
+- **`backends/__init__.py`** — Protocol 定义、`ModelConfig` 注册表与引擎工厂
+- **`backends/base.py`** — 各引擎共享的工具（设备选择、进度上报、输出裁剪）
+
+### 推理后端选择
+
+服务启动时探测最合适的推理后端，并用于所有支持它的引擎：
+
+| 平台 | 后端 | 加速方式 |
+| --- | --- | --- |
+| macOS（Apple Silicon） | MLX | Metal / Neural Engine |
+| Windows / Linux（NVIDIA） | PyTorch | CUDA（cu128） |
+| Linux（AMD） | PyTorch | ROCm |
+| Windows / Linux（Intel Arc） | PyTorch | XPU（IPEX） |
+| Windows（其他 GPU） | PyTorch | DirectML |
+| 任意平台 | PyTorch | CPU 兜底 |
+
+各平台细节与手动覆盖见 [GPU 加速](/docs/getting-started/gpu-acceleration)。
+
+### 数据模型
+
+核心表定义在 `backend/database/models.py`：
+
+- **`profiles`** — 声音配置文件，`voice_type` 作为判别字段（`cloned` | `preset` | `designed`），另有 `preset_engine`、`preset_voice_id`、`default_engine`。
+- **`profile_samples`** — 克隆型配置文件的参考音频与转写文本；预设型为空。
+- **`generations`** — 生成的音频，记录文本、引擎、模型、语言、随机种子与时长。
+- **`generation_versions`** — 同一生成结果应用不同效果链后的版本。
+- **`audio_channels`** + **`channel_device_mappings`** + **`profile_channel_mappings`** — 多路输出路由。
+
+详见[声音配置文件](/docs/developer/voice-profiles)与[效果管线](/docs/developer/effects-pipeline)。
+
+## 桌面应用（Tauri）
+
+`tauri/src-tauri` 包含 `Cargo.toml`、`tauri.conf.json`、`src/` 与 `binaries/`。它负责：
+
+- 以 sidecar 进程方式启动 Python 后端
+- 原生文件对话框
+- 系统托盘集成
+- 自动更新（Tauri updater + 自定义 CUDA 后端替换）
+- parent-pid 看门狗：应用崩溃时后端随之退出
+
+## 构建流程
+
+开发态：
+
+```bash title="终端"
+just dev              # 后端 + Tauri 应用
+just dev-web          # 后端 + Web 应用（不含 Tauri）
+just dev-backend      # 只启动后端
+just dev-frontend     # 只启动 Tauri 应用（后端需已在运行）
+```
+
+生产态：
+
+```bash title="终端"
+just build            # CPU 服务端二进制 + Tauri 安装包
+just build-local      # Windows：CPU + CUDA 二进制 + Tauri 安装包
+just build-server     # 只构建服务端二进制
+just build-tauri      # 只构建 Tauri 应用
+```
+
+PyInstaller 具体做什么、CUDA 二进制如何拆分打包，见[构建与打包](/docs/developer/building)。
+
+## 数据流
+
+### 生成流程
+
+1. **用户输入** — 在 React 组件里输入文本，选择引擎与配置文件
+2. **状态更新** — Zustand 的生成表单 store 记录请求
+3. **API 请求** — React Query mutation 打到 `POST /generate`
+4. **路由** — `routes/generate.py` 校验输入并分发给 `services/generation.py`
+5. **声音提示** — 服务通过引擎后端创建或取用缓存的声音提示（voice prompt）
+6. **队列** — `services/task_queue.py` 串行化生成，避免 GPU 争用
+7. **推理** — 引擎后端执行 `generate()`，返回音频与采样率
+8. **后处理** — 按需裁剪（部分引擎需要），并按生成版本应用效果链
+9. **存储** — 音频写入 generations 目录，元数据写入 SQLite
+10. **响应** — 后端返回生成记录，前端更新 React Query 缓存并播放音频
+
+## 性能考量
+
+**前端：** 路由级代码分割与懒加载、对重型组件用 `React.memo`、大列表虚拟滚动、搜索与输入防抖。
+
+**后端：** 所有 I/O 异步，推理跑在 `asyncio.to_thread` 中；串行任务队列避免多个引擎抢 GPU；声音提示按引擎缓存在音频哈希 + 参考文本上；同一引擎同时只加载一个模型，切换时卸载上一个；后端实例每进程只创建一次。
+
+## 安全
+
+当前：默认仅本机可用（绑定 `127.0.0.1:17493`），无认证（信任 localhost），文件系统访问受 Tauri 沙箱限制。
+
+规划中：远程模式的 API key 认证、用户账号、速率限制与 HTTPS。
+
+## 部署模式
+
+**本地模式** — 后端作为 sidecar 运行，数据全在设备上，不需要网络。
+
+**远程模式** — 后端跑在另一台机器上（Docker 或裸机），桌面端或 Web 端通过 HTTP 连接。参见[远程模式](/docs/getting-started/remote-mode)与 [Docker](/docs/getting-started/docker)。

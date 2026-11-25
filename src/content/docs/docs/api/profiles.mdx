@@ -1,0 +1,234 @@
+---
+title: 声音配置文件
+description: 声音配置文件的增删改查，以及样本音频的上传与删除。
+sidebar:
+  order: 2
+---
+
+这组接口管理声音配置文件：列表、创建、读取、更新、删除，以及样本音频的列出、上传与移除。除样本上传用 `multipart/form-data` 外都是 JSON。删除配置文件会连带删掉它的样本和全部生成记录。
+
+## `GET /profiles`
+
+列出全部声音配置文件，返回数组，不分页，也无请求参数。
+
+```json title="200 OK"
+[
+  {
+    "id": "7c1d0e2a-5b3f-4a9c-9d8e-0f1a2b3c4d5e",
+    "name": "旁白",
+    "description": "纪录片旁白音色",
+    "language": "zh",
+    "avatar_path": null,
+    "effects_chain": null,
+    "voice_type": "cloned",
+    "preset_engine": null,
+    "preset_voice_id": null,
+    "design_prompt": null,
+    "default_engine": "qwen",
+    "personality": null,
+    "generation_count": 12,
+    "sample_count": 2,
+    "created_at": "2025-03-01T10:00:00Z",
+    "updated_at": "2025-03-18T09:12:44Z"
+  }
+]
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `voice_type` | `cloned`（克隆）、`preset`（预设音色）、`designed`（文本设计） |
+| `default_engine` | 该配置默认使用的引擎，生成时可用 `engine` 覆盖 |
+| `effects_chain` | 默认效果链，元素结构同 `POST /generate` 的 `effects_chain` |
+| `avatar_path` | 头像在数据目录内的相对路径，没有则为 `null` |
+| `personality` | 声音人格提示词，`null` 表示未设置 |
+| `generation_count`、`sample_count` | 已生成条数与样本条数 |
+| `created_at`、`updated_at` | ISO 8601 时间，UTC |
+
+错误：无业务错误码，服务未启动时连接被拒绝。
+
+## `POST /profiles`
+
+创建一个声音配置文件，返回创建好的对象。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `name` | string | 是 | 显示名，1–100 字符，同一实例内不能重名 |
+| `description` | string | 否 | 说明，≤ 500 字符 |
+| `language` | string | 否 | 默认 `en`，取值同 `/generate` 的语言列表 |
+| `voice_type` | string | 否 | 默认 `cloned`，可选 `cloned`、`preset`、`designed` |
+| `preset_engine` | string | 否 | 预设音色所属引擎，`voice_type` 为 `preset` 时必填 |
+| `preset_voice_id` | string | 否 | 预设音色 ID，`voice_type` 为 `preset` 时必填 |
+| `design_prompt` | string | 否 | 声音设计的文本描述，≤ 2000 字符 |
+| `default_engine` | string | 否 | 默认引擎，≤ 50 字符，取值见 `/generate` 的引擎列表 |
+| `personality` | string | 否 | 声音人格提示词，≤ 2000 字符 |
+
+<Aside type="warning" title="预设音色的约束">
+  `voice_type` 为 `preset` 时必须同时给出 `preset_engine` 与 `preset_voice_id`，`default_engine` 必须等于 `preset_engine`，且 `preset_voice_id` 要在该引擎的可用音色列表里，否则返回 400。
+</Aside>
+
+```json title="200 OK（省略未设置的字段）"
+{
+  "id": "7c1d0e2a-5b3f-4a9c-9d8e-0f1a2b3c4d5e",
+  "name": "旁白",
+  "description": "纪录片旁白音色",
+  "language": "zh",
+  "voice_type": "cloned",
+  "default_engine": "qwen",
+  "generation_count": 0,
+  "sample_count": 0,
+  "created_at": "2025-03-18T09:12:44Z",
+  "updated_at": "2025-03-18T09:12:44Z"
+}
+```
+
+```bash title="终端"
+curl -X POST http://127.0.0.1:17493/profiles \
+  -H "Content-Type: application/json" \
+  -d '{"name": "旁白", "description": "纪录片旁白音色", "language": "zh", "default_engine": "qwen"}'
+```
+
+错误：`400` 名称重复或预设音色参数不合格；`422` 字段校验失败（`name` 为空、`language` 不在枚举内等）。
+
+## `GET /profiles/{profile_id}`
+
+按 ID 读取单个配置文件，字段含义与列表中的对象相同。
+
+路径参数：`profile_id`（string，必填）。
+
+```json title="200 OK（省略未设置的字段）"
+{
+  "id": "7c1d0e2a-5b3f-4a9c-9d8e-0f1a2b3c4d5e",
+  "name": "旁白",
+  "language": "zh",
+  "voice_type": "cloned",
+  "default_engine": "qwen",
+  "generation_count": 12,
+  "sample_count": 2,
+  "created_at": "2025-03-01T10:00:00Z",
+  "updated_at": "2025-03-18T09:12:44Z"
+}
+```
+
+```bash title="终端"
+curl http://127.0.0.1:17493/profiles/7c1d0e2a-5b3f-4a9c-9d8e-0f1a2b3c4d5e
+```
+
+错误：`404 Profile not found`，ID 不存在。
+
+## `PUT /profiles/{profile_id}`
+
+更新配置文件并返回更新后的对象。请求体与创建相同，但只有下面这些字段会写入；`voice_type`、`preset_engine`、`preset_voice_id`、`design_prompt` 保持原值。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `name` | string | 是 | 新的显示名，不能与其它配置文件重名 |
+| `description` | string | 否 | 新说明；省略则清空 |
+| `language` | string | 否 | 默认 `en`，省略等于写回 `en` |
+| `default_engine` | string | 否 | 省略时保留原引擎 |
+| `personality` | string | 否 | 声音人格提示词；省略则清空 |
+
+```json title="200 OK（省略未设置的字段）"
+{
+  "id": "7c1d0e2a-5b3f-4a9c-9d8e-0f1a2b3c4d5e",
+  "name": "旁白（慢速）",
+  "language": "zh",
+  "voice_type": "cloned",
+  "default_engine": "chatterbox",
+  "updated_at": "2025-03-18T10:02:11Z"
+}
+```
+
+```bash title="终端"
+curl -X PUT http://127.0.0.1:17493/profiles/7c1d0e2a-5b3f-4a9c-9d8e-0f1a2b3c4d5e \
+  -H "Content-Type: application/json" \
+  -d '{"name": "旁白（慢速）", "language": "zh", "default_engine": "chatterbox"}'
+```
+
+错误：`400` 名称重复或预设参数冲突；`404 Profile not found`；`422` 字段校验失败。
+
+## `DELETE /profiles/{profile_id}`
+
+删除配置文件，同时删除它的样本与全部生成记录，音频文件一并清理。
+
+```json title="200 OK"
+{
+  "message": "Profile deleted successfully"
+}
+```
+
+```bash title="终端"
+curl -X DELETE http://127.0.0.1:17493/profiles/7c1d0e2a-5b3f-4a9c-9d8e-0f1a2b3c4d5e
+```
+
+错误：`404 Profile not found`，ID 不存在。
+
+## `GET /profiles/{profile_id}/samples`
+
+列出某个配置文件下的全部样本，返回数组。路径参数：`profile_id`（string，必填）。
+
+```json title="200 OK"
+[
+  {
+    "id": "b2f4c1d8-6a3e-4f90-8c7b-2d1e0f3a4b5c",
+    "profile_id": "7c1d0e2a-5b3f-4a9c-9d8e-0f1a2b3c4d5e",
+    "audio_path": "profiles/7c1d0e2a-5b3f-4a9c-9d8e-0f1a2b3c4d5e/b2f4c1d8-6a3e-4f90-8c7b-2d1e0f3a4b5c.wav",
+    "reference_text": "这是一段参考录音。"
+  }
+]
+```
+
+```bash title="终端"
+curl http://127.0.0.1:17493/profiles/7c1d0e2a-5b3f-4a9c-9d8e-0f1a2b3c4d5e/samples
+```
+
+错误：无业务错误码。
+
+## `POST /profiles/{profile_id}/samples`
+
+给配置文件添加一条样本：上传录音，并附上与录音内容一致的参考文本。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `file` | 文件 | 是 | 参考录音，≤ 50 MB；扩展名支持 `.wav`、`.mp3`、`.m4a`、`.ogg`、`.flac`、`.aac`、`.webm`、`.opus` |
+| `reference_text` | string | 是 | 录音对应的文本，1–1000 字符 |
+
+服务端会解码音频、检查质量，再统一存成 WAV，所以 `audio_path` 总是以 `.wav` 结尾。`reference_text` 与录音越接近，克隆效果越稳定。
+
+```json title="200 OK"
+{
+  "id": "b2f4c1d8-6a3e-4f90-8c7b-2d1e0f3a4b5c",
+  "profile_id": "7c1d0e2a-5b3f-4a9c-9d8e-0f1a2b3c4d5e",
+  "audio_path": "profiles/7c1d0e2a-5b3f-4a9c-9d8e-0f1a2b3c4d5e/b2f4c1d8-6a3e-4f90-8c7b-2d1e0f3a4b5c.wav",
+  "reference_text": "这是一段参考录音。"
+}
+```
+
+```bash title="终端"
+curl -X POST http://127.0.0.1:17493/profiles/7c1d0e2a-5b3f-4a9c-9d8e-0f1a2b3c4d5e/samples \
+  -F "file=@./reference.wav" \
+  -F "reference_text=这是一段参考录音。"
+```
+
+错误：`400` 配置文件不存在或音频不合格（太短、太吵、无法解码）；`413` 文件超过 50 MB；`500` 音频处理失败。
+
+## `DELETE /profiles/samples/{sample_id}`
+
+删除一条样本。路径是 `/profiles/samples/{sample_id}`，不带 `profile_id`。
+
+```json title="200 OK"
+{
+  "message": "Sample deleted successfully"
+}
+```
+
+```bash title="终端"
+curl -X DELETE http://127.0.0.1:17493/profiles/samples/b2f4c1d8-6a3e-4f90-8c7b-2d1e0f3a4b5c
+```
+
+错误：`404 Sample not found`，样本不存在。
+
+## 相关页面
+
+- [创建声音配置文件](/docs/guide/creating-voice-profiles)：界面里的完整流程。
+- [语音生成](/docs/api/generation)：用配置文件生成音频。
+- [声音配置文件与样本](/docs/developer/voice-profiles)：存储结构与缓存细节。

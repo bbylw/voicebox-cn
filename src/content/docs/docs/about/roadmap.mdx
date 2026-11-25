@@ -1,0 +1,23 @@
+---
+title: 路线图
+description: Voicebox 正在做和打算做的功能。
+sidebar:
+  order: 2
+---
+
+Voicebox 仍在快速迭代。下面是公开的待办方向，优先级会随 issue 和实际使用反馈调整。
+
+| 方向 | 说明 |
+| --- | --- |
+| Windows / Linux 自动粘贴 | 听写粘贴对齐——Windows 用 `SendInput`，Linux 用 uinput / AT-SPI |
+| STT 引擎扩展 | Parakeet v3、Qwen3-ASR 加入 Whisper，覆盖 50+ 语言，改善非英语质量 |
+| 流水线路由 | 可配置的 来源 → 变换 → 输出 链路，带 Webhook、MCP 输出与预设编辑器 |
+| 流式转录 | WebSocket `/transcribe/stream`，边说边返回部分转录 |
+| 端到端语音 LLM | Moshi、GLM-4-Voice、Qwen2.5 Omni——真正的语音到语音，中间没有文本 |
+| 语音设计 | 从一段文字描述创建新音色 |
+| 长篇捕获 | 双流录音（麦克风 + 系统音频），带摘要 LLM 变换 |
+| 平台输出 | Apple Notes、Obsidian 等可选集成 |
+| 插件架构 | 用自定义模型、变换和输出扩展 |
+| 移动伴侣 | 从手机控制 Voicebox |
+
+完整的工程状态、issue 分诊和优先级队列见 [docs/PROJECT_STATUS.md](https://github.com/jamiepine/voicebox/blob/main/docs/PROJECT_STATUS.md)：它记录已交付内容、正在进行的工作、正在评估的 TTS 引擎，以及接受或推迟某些集成的理由。

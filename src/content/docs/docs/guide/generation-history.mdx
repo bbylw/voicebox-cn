@@ -1,0 +1,88 @@
+---
+title: 生成历史
+description: 自动记录每一次生成的音频，方便查找、复用与清理。
+sidebar:
+  order: 5
+---
+
+Voicebox 会完整保留所有生成过的音频。历史记录让你随时找回之前的结果，也方便用同一段文本或同一个声音再试一次。
+
+## 能做什么
+
+<CardGrid>
+  <Card title="完整记录">每一次生成都会自动保存，不需要手动归档。</Card>
+  <Card title="搜索与筛选">按文本、声音或日期定位。</Card>
+  <Card title="重新生成">一键用同样的设置再生成一次。</Card>
+  <Card title="导出">单条下载，或批量导出。</Card>
+</CardGrid>
+
+## 查看历史
+
+打开 **History** 标签页就能看到全部生成记录。每条记录显示：
+
+- 生成的文本
+- 使用的声音配置文件
+- 时间戳
+- 音频时长
+- 语言
+
+## 可执行的操作
+
+### 播放
+
+点击任意一条生成记录即可播放。
+
+### 重新生成
+
+用原设置再生成一遍，也可以改掉文本或换一个声音。
+
+### 下载
+
+导出为 WAV、MP3 或 M4A。
+
+### 删除
+
+删掉不需要的生成记录以释放空间。
+
+### 加入故事
+
+把生成结果拖到故事编辑器的时间线上，直接作为轨道上的片段使用。
+
+## 搜索与筛选
+
+<Tabs>
+  <TabItem label="按文本">
+    按文本内容搜索，例如：
+
+    ```text
+    "Hello world"
+    ```
+  </TabItem>
+  <TabItem label="按声音">
+    按声音配置文件筛选，在下拉框里选择即可。
+  </TabItem>
+  <TabItem label="按日期">
+    按时间范围筛选：最近 7 天、最近 30 天，或自定义区间。
+  </TabItem>
+</Tabs>
+
+## 存储位置
+
+历史记录保存在本地：
+
+| 平台 | 路径 |
+| --- | --- |
+| macOS | `~/Library/Application Support/sh.voicebox.app/data/` |
+| Windows | `%APPDATA%/sh.voicebox.app/data/` |
+| Linux | `~/.config/sh.voicebox.app/data/` |
+
+<Aside type="caution">
+删除这个数据目录会清空全部历史记录。重要文件请先导出。
+</Aside>
+
+## 下一步
+
+<CardGrid>
+  <Card title="生成语音" href="/docs/guide/generating-speech">调整文本排版，改善生成质量。</Card>
+  <Card title="故事编辑器" href="/docs/guide/stories">把生成结果组装成多角色叙事。</Card>
+</CardGrid>

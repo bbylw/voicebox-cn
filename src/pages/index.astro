@@ -1,14 +1,21 @@
+---
+import "@fontsource-variable/space-grotesk";
+import "@fontsource-variable/dm-sans";
+---
 <!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Voicebox - 开源语音克隆工作室</title>
+    <title>Voicebox — 开源 AI 语音工作室（中文站）</title>
+    <link rel="canonical" href="https://voicebox.ndjp.net/" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Voicebox 中文站" />
+    <meta property="og:title" content="Voicebox — 开源 AI 语音工作室" />
+    <meta property="og:description" content="克隆任意声音、生成自然语音、全局听写进任何应用，并让智能体用你的声音说话——全部在本地运行。" />
     <meta name="description" content="开源 AI 语音工作室。克隆任意声音、生成自然语音、全局听写进任何应用，并让 AI 智能体用你的声音说话——全部在本地运行。" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,400&display=swap" rel="stylesheet" />
-    <style>
+    <style is:global>
       *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
       :root {
         --bg: #09090b;
@@ -34,14 +41,14 @@
         --radius-xl: 20px;
       }
       html { scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: #27272a #09090b; }
-      body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
-      h1, h2, h3, h4, h5 { font-family: 'Space Grotesk', sans-serif; line-height: 1.15; }
+      body { font-family: 'DM Sans Variable', sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+      h1, h2, h3, h4, h5 { font-family: 'Space Grotesk Variable', sans-serif; line-height: 1.15; }
       a { color: inherit; text-decoration: none; }
 
       /* ---- NAV ---- */
       .nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; backdrop-filter: blur(16px) saturate(1.4); background: rgba(9,9,11,.72); border-bottom: 1px solid var(--border); }
       .nav-inner { max-width: 1140px; margin: 0 auto; padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between; }
-      .nav-logo { display: flex; align-items: center; gap: 10px; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 1.15rem; }
+      .nav-logo { display: flex; align-items: center; gap: 10px; font-family: 'Space Grotesk Variable', sans-serif; font-weight: 700; font-size: 1.15rem; }
       .nav-logo svg { width: 28px; height: 28px; color: var(--accent); }
       .nav-links { display: flex; align-items: center; gap: 28px; }
       .nav-links a { font-size: .875rem; color: var(--text-muted); transition: color .2s; }
@@ -63,13 +70,13 @@
       .hero { position: relative; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 120px 24px 80px; overflow: hidden; }
       .hero-glow { position: absolute; top: -30%; left: 50%; transform: translateX(-50%); width: 800px; height: 600px; background: radial-gradient(ellipse, rgba(167,139,250,.10) 0%, transparent 70%); pointer-events: none; }
       .hero-badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border); font-size: .8125rem; color: var(--text-secondary); margin-bottom: 28px; }
-      .hero-badge span { font-family: 'Space Grotesk', sans-serif; font-weight: 500; }
+      .hero-badge span { font-family: 'Space Grotesk Variable', sans-serif; font-weight: 500; }
       .hero h1 { font-size: clamp(2.5rem, 6vw, 4.25rem); text-align: center; max-width: 780px; letter-spacing: -.03em; margin-bottom: 20px; }
       .hero-sub { text-align: center; max-width: 600px; font-size: 1.125rem; color: var(--text-secondary); margin-bottom: 36px; line-height: 1.7; }
       .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-bottom: 12px; }
-      .btn-primary { display: inline-flex; align-items: center; gap: 8px; padding: 12px 28px; border-radius: 10px; font-weight: 600; font-size: .9375rem; background: var(--text); color: var(--bg); transition: opacity .2s; font-family: 'Space Grotesk', sans-serif; }
+      .btn-primary { display: inline-flex; align-items: center; gap: 8px; padding: 12px 28px; border-radius: 10px; font-weight: 600; font-size: .9375rem; background: var(--text); color: var(--bg); transition: opacity .2s; font-family: 'Space Grotesk Variable', sans-serif; }
       .btn-primary:hover { opacity: .88; }
-      .btn-secondary { display: inline-flex; align-items: center; gap: 8px; padding: 12px 28px; border-radius: 10px; font-weight: 500; font-size: .9375rem; border: 1px solid var(--border); color: var(--text-secondary); transition: border-color .2s, color .2s; font-family: 'Space Grotesk', sans-serif; }
+      .btn-secondary { display: inline-flex; align-items: center; gap: 8px; padding: 12px 28px; border-radius: 10px; font-weight: 500; font-size: .9375rem; border: 1px solid var(--border); color: var(--text-secondary); transition: border-color .2s, color .2s; font-family: 'Space Grotesk Variable', sans-serif; }
       .btn-secondary:hover { border-color: var(--border-hover); color: var(--text); }
       .hero-platforms { font-size: .8125rem; color: var(--text-muted); margin-bottom: 48px; }
 
@@ -80,14 +87,14 @@
       .app-dot.r { background: #ff5f57; }
       .app-dot.y { background: #febc2e; }
       .app-dot.g { background: #28c840; }
-      .app-titlebar span { flex: 1; text-align: center; font-size: .75rem; color: var(--text-muted); font-family: 'Space Grotesk'; }
+      .app-titlebar span { flex: 1; text-align: center; font-size: .75rem; color: var(--text-muted); font-family: 'Space Grotesk Variable'; }
       .app-body { display: grid; grid-template-columns: 220px 1fr; min-height: 420px; }
       @media (max-width: 768px) { .app-body { grid-template-columns: 1fr; } .app-sidebar { display: none; } }
       .app-sidebar { border-right: 1px solid var(--border); padding: 16px 12px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
       .sidebar-header { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; margin-bottom: 8px; }
-      .sidebar-header span { font-size: .8125rem; font-weight: 600; color: var(--text-secondary); font-family: 'Space Grotesk'; }
+      .sidebar-header span { font-size: .8125rem; font-weight: 600; color: var(--text-secondary); font-family: 'Space Grotesk Variable'; }
       .sidebar-actions { display: flex; gap: 4px; }
-      .sidebar-actions button { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: .6875rem; color: var(--text-muted); cursor: pointer; font-family: 'DM Sans'; transition: border-color .2s; }
+      .sidebar-actions button { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: .6875rem; color: var(--text-muted); cursor: pointer; font-family: 'DM Sans Variable'; transition: border-color .2s; }
       .sidebar-actions button:hover { border-color: var(--border-hover); color: var(--text-secondary); }
       .voice-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; transition: background .15s; }
       .voice-item:hover { background: rgba(255,255,255,.04); }
@@ -100,12 +107,12 @@
 
       .app-main { display: flex; flex-direction: column; }
       .app-input-area { padding: 20px; border-bottom: 1px solid var(--border); }
-      .app-input { width: 100%; background: rgba(255,255,255,.04); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; color: var(--text); font-size: .875rem; resize: none; outline: none; font-family: 'DM Sans'; transition: border-color .2s; min-height: 44px; }
+      .app-input { width: 100%; background: rgba(255,255,255,.04); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; color: var(--text); font-size: .875rem; resize: none; outline: none; font-family: 'DM Sans Variable'; transition: border-color .2s; min-height: 44px; }
       .app-input:focus { border-color: var(--accent); }
       .app-input::placeholder { color: var(--text-muted); }
       .input-controls { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; gap: 8px; flex-wrap: wrap; }
       .engine-pills { display: flex; gap: 6px; flex-wrap: wrap; }
-      .engine-pill { padding: 4px 10px; border-radius: 6px; font-size: .6875rem; font-weight: 500; border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; transition: all .15s; font-family: 'Space Grotesk'; }
+      .engine-pill { padding: 4px 10px; border-radius: 6px; font-size: .6875rem; font-weight: 500; border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; transition: all .15s; font-family: 'Space Grotesk Variable'; }
       .engine-pill.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
       .gen-list { flex: 1; padding: 12px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
       .gen-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); transition: border-color .15s; }
@@ -124,7 +131,7 @@
       /* ---- SECTIONS ---- */
       .section { padding: 100px 24px; max-width: 1140px; margin: 0 auto; }
       .section-divider { border: none; border-top: 1px solid var(--border); max-width: 1140px; margin: 0 auto; }
-      .section-label { font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .1em; color: var(--accent); margin-bottom: 12px; font-family: 'Space Grotesk'; }
+      .section-label { font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .1em; color: var(--accent); margin-bottom: 12px; font-family: 'Space Grotesk Variable'; }
       .section-title { font-size: clamp(1.75rem, 4vw, 2.75rem); letter-spacing: -.025em; margin-bottom: 16px; }
       .section-desc { font-size: 1.0625rem; color: var(--text-secondary); max-width: 600px; line-height: 1.7; }
 
@@ -156,10 +163,10 @@
       .engine-card h3 { font-size: 1.125rem; }
       .engine-card .by { font-size: .75rem; color: var(--text-muted); }
       .engine-card .model-sizes { display: flex; gap: 4px; }
-      .engine-card .model-sizes span { font-size: .6875rem; padding: 2px 8px; border-radius: 5px; background: rgba(255,255,255,.06); color: var(--text-muted); font-family: 'Space Grotesk'; font-weight: 500; }
+      .engine-card .model-sizes span { font-size: .6875rem; padding: 2px 8px; border-radius: 5px; background: rgba(255,255,255,.06); color: var(--text-muted); font-family: 'Space Grotesk Variable'; font-weight: 500; }
       .engine-card .desc { font-size: .875rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 14px; }
       .engine-tags { display: flex; gap: 6px; flex-wrap: wrap; }
-      .engine-tag { font-size: .6875rem; padding: 3px 10px; border-radius: 6px; font-weight: 500; font-family: 'Space Grotesk'; }
+      .engine-tag { font-size: .6875rem; padding: 3px 10px; border-radius: 6px; font-weight: 500; font-family: 'Space Grotesk Variable'; }
 
       /* ---- DOWNLOAD ---- */
       .download-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 48px; max-width: 560px; }
@@ -168,7 +175,7 @@
       .download-card:hover { border-color: var(--border-hover); background: var(--bg-card); }
       .download-card .dl-icon { font-size: 1.5rem; }
       .download-card .dl-info { }
-      .download-card .dl-name { font-size: .875rem; font-weight: 600; font-family: 'Space Grotesk'; }
+      .download-card .dl-name { font-size: .875rem; font-weight: 600; font-family: 'Space Grotesk Variable'; }
       .download-card .dl-detail { font-size: .75rem; color: var(--text-muted); }
       .download-card .dl-arrow { margin-left: auto; color: var(--text-muted); }
 
@@ -176,10 +183,10 @@
       .footer { border-top: 1px solid var(--border); padding: 48px 24px; }
       .footer-inner { max-width: 1140px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 48px; justify-content: space-between; }
       .footer-brand { max-width: 280px; }
-      .footer-brand .logo { display: flex; align-items: center; gap: 8px; font-family: 'Space Grotesk'; font-weight: 700; font-size: 1rem; margin-bottom: 10px; }
+      .footer-brand .logo { display: flex; align-items: center; gap: 8px; font-family: 'Space Grotesk Variable'; font-weight: 700; font-size: 1rem; margin-bottom: 10px; }
       .footer-brand .logo svg { width: 22px; height: 22px; color: var(--accent); }
       .footer-brand p { font-size: .8125rem; color: var(--text-muted); line-height: 1.6; }
-      .footer-col h4 { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-bottom: 14px; font-family: 'Space Grotesk'; font-weight: 600; }
+      .footer-col h4 { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-bottom: 14px; font-family: 'Space Grotesk Variable'; font-weight: 600; }
       .footer-col a { display: block; font-size: .8125rem; color: var(--text-secondary); padding: 4px 0; transition: color .2s; }
       .footer-col a:hover { color: var(--text); }
       .footer-bottom { max-width: 1140px; margin: 0 auto; padding-top: 28px; margin-top: 28px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; font-size: .75rem; color: var(--text-muted); }
@@ -219,7 +226,7 @@
           <a href="#features">功能</a>
           <a href="#about">关于</a>
           <a href="#download">下载</a>
-          <a href="https://docs.voicebox.sh" target="_blank">文档</a>
+          <a href="/docs/">文档</a>
         </div>
         <div class="nav-right">
           <a href="https://github.com/jamiepine/voicebox" target="_blank" class="nav-star">
@@ -698,72 +705,19 @@
         </div>
         <div class="footer-col">
           <h4>资源</h4>
-          <a href="https://docs.voicebox.sh" target="_blank">文档</a>
+          <a href="/docs/">中文文档</a>
           <a href="https://github.com/jamiepine/voicebox" target="_blank">源代码</a>
           <a href="https://github.com/jamiepine/voicebox/releases" target="_blank">版本发布</a>
+          <a href="https://github.com/bbylw/voicebox-cn" target="_blank">本站源码</a>
           <a href="https://github.com/jamiepine/voicebox/issues" target="_blank">问题反馈</a>
         </div>
       </div>
       <div class="footer-bottom">
         <span>MIT License · 2026</span>
-        <span>基于 Tauri (Rust) 构建</span>
+        <span>本站由 Astro · Nimbus Docs · Bun 构建</span>
       </div>
     </footer>
 
-    <script>
-      // Wave bars
-      const waveBars = document.getElementById('waveBars');
-      if (waveBars) {
-        for (let i = 0; i < 80; i++) {
-          const bar = document.createElement('div');
-          bar.className = 'wave-bar';
-          const h = Math.sin(i * 0.3) * 12 + Math.random() * 8 + 6;
-          bar.style.height = h + 'px';
-          waveBars.appendChild(bar);
-        }
-      }
-
-      // Marquee
-      const voices = [
-        { name: 'Jarvis', desc: '沉稳英式 AI 助手', bg: 'linear-gradient(135deg,#6366f1,#8b5cf6)' },
-        { name: 'Morgan Freeman', desc: '温暖浑厚的男中音', bg: 'linear-gradient(135deg,#f59e0b,#ef4444)' },
-        { name: 'Bob Ross', desc: '轻柔、令人安心', bg: 'linear-gradient(135deg,#10b981,#06b6d4)' },
-        { name: 'Sam Altman', desc: '深思熟虑的硅谷节奏', bg: 'linear-gradient(135deg,#64748b,#475569)' },
-        { name: 'Scarlett Johansson', desc: '柔和低沉的女中音', bg: 'linear-gradient(135deg,#ec4899,#f43f5e)' },
-        { name: 'David Attenborough', desc: '温暖而充满敬意的叙述', bg: 'linear-gradient(135deg,#3b82f6,#6366f1)' },
-        { name: 'Linus Tech Tips', desc: '充满活力的科技解说', bg: 'linear-gradient(135deg,#f97316,#eab308)' },
-        { name: 'Fireship', desc: '快节奏、冷面科技幽默', bg: 'linear-gradient(135deg,#ef4444,#f97316)' },
-        { name: 'Barack Obama', desc: '有节奏感的沉稳演讲', bg: 'linear-gradient(135deg,#1e40af,#3b82f6)' },
-        { name: 'Zendaya', desc: '轻松现代、不费力的酷感', bg: 'linear-gradient(135deg,#d946ef,#a855f7)' },
-        { name: 'Dario Amodei', desc: '冷静精确的学术深度', bg: 'linear-gradient(135deg,#06b6d4,#0ea5e9)' },
-      ];
-      const track = document.getElementById('marqueeTrack');
-      if (track) {
-        const all = [...voices, ...voices];
-        all.forEach(v => {
-          const card = document.createElement('div');
-          card.className = 'marquee-card';
-          card.innerHTML = `<div class="mc-avatar" style="background:${v.bg}">${v.name[0]}</div><div><div class="mc-name">${v.name}</div><div class="mc-desc">${v.desc}</div></div>`;
-          track.appendChild(card);
-        });
-      }
-
-      // Scroll reveal
-      const observer = new IntersectionObserver((entries) => {
-        entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); } });
-      }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
-      document.querySelectorAll('.fade-up').forEach(el => observer.observe(el));
-
-      // Smooth scroll
-      document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-        anchor.addEventListener('click', function(e) {
-          const id = this.getAttribute('href');
-          if (id === '#') return;
-          e.preventDefault();
-          const target = document.querySelector(id);
-          if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        });
-      });
-    </script>
+    <script is:inline src="/landing.js"></script>
   </body>
 </html>

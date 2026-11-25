@@ -1,0 +1,192 @@
+---
+title: 预设音色
+description: 不录参考音频，直接从内置音色目录里选一个现成的声音来用。
+sidebar:
+  order: 3
+---
+
+部分 Voicebox 引擎自带一套打磨好的内置音色。你不必克隆自己的音频样本，而是从固定目录里挑一个音色，模型就用这个音色说话——不用录音、不用上传、不用为每个音色单独训练。
+
+## 带预设音色的两个引擎
+
+目前有两个引擎提供预设音色：
+
+| 引擎 | 音色数 | 语言数 | 特点 |
+| --- | --- | --- | --- |
+| **Kokoro 82M** | 50 | 8 | 模型极小，CPU 友好，显存占用是所有引擎里最低的 |
+| **Qwen CustomVoice** | 9（精选） | 4（音色覆盖） | 用自然语言控制语气、情绪和语速 |
+
+<Aside type="note">
+想克隆某个特定人的声音？看[声音克隆](/docs/guide/voice-cloning)。
+</Aside>
+
+## 什么时候用预设音色
+
+<CardGrid>
+  <Card title="没有参考音频">没有目标声音的录音，或者不想提供。</Card>
+  <Card title="产出稳定">精选音色面对任何文本都有可预期的质量。</Card>
+  <Card title="省时间">跳过音频清理、样本准备和质量迭代的循环。</Card>
+  <Card title="轻量部署">Kokoro 在 CPU 上实时运行，模型文件约 350 MB，不需要 GPU。</Card>
+</CardGrid>
+
+## 创建预设音色配置文件
+
+<Steps>
+  <Step title="打开 Profiles → New Profile">
+    入口与创建克隆配置文件相同。
+  </Step>
+  <Step title="选择引擎">
+    在引擎下拉框里选 **Kokoro** 或 **Qwen CustomVoice**。
+  </Step>
+  <Step title="挑一个预设音色">
+    会显示所选引擎的音色目录，点任意一个即可试听。
+  </Step>
+  <Step title="命名并保存">
+    给配置文件起名，不需要音频样本，直接保存。
+  </Step>
+  <Step title="生成">
+    和别的配置文件一样，在浮动生成框或 Generate 页面里使用。
+  </Step>
+</Steps>
+
+<Aside type="caution">
+预设型配置文件锁定在来源引擎上——切换引擎就不行了，因为该音色只存在于那个模型。切到别的引擎时配置文件网格会把预设型配置置灰，点击其中一个会自动把引擎切回正确的那一个。
+</Aside>
+
+## Kokoro 82M：8 种语言、50 个音色
+
+Kokoro 是 Voicebox 里最小的引擎，8200 万参数。它以 CPU 实时速度运行，显存占用可以忽略，是轻量本地推理的首选。它的音色是训练进模型里的风格向量，这里没有克隆的概念。
+
+**仓库：** [`hexgrad/Kokoro-82M`](https://huggingface.co/hexgrad/Kokoro-82M) · Apache 2.0 许可
+
+### 美式英语
+
+| 女声 | 男声 |
+| --- | --- |
+| Alloy | Adam |
+| Aoede | Echo |
+| Bella | Eric |
+| Heart | Fenrir |
+| Jessica | Liam |
+| Kore | Michael |
+| Nicole | Onyx |
+| Nova | Puck |
+| River | Santa |
+| Sarah |  |
+| Sky |  |
+
+### 英式英语
+
+| 女声 | 男声 |
+| --- | --- |
+| Alice | Daniel |
+| Emma | Fable |
+| Isabella | George |
+| Lily | Lewis |
+
+### 其他语言
+
+| 语言 | 音色 |
+| --- | --- |
+| 西班牙语（`es`） | Dora (女)、Alex (男)、Santa (男) |
+| 法语（`fr`） | Siwis (女) |
+| 印地语（`hi`） | Alpha (女)、Beta (女)、Omega (男)、Psi (男) |
+| 意大利语（`it`） | Sara (女)、Nicola (男) |
+| 日语（`ja`） | Alpha (女)、Gongitsune (女)、Nezumi (女)、Tebukuro (女)、Kumo (男) |
+| 葡萄牙语（`pt`） | Dora (女)、Alex (男)、Santa (男) |
+| 中文（`zh`） | Xiaobei (女)、Xiaoni (女)、Xiaoxiao (女)、Xiaoyi (女) |
+
+### Kokoro 一览
+
+| 项目 | 值 |
+| --- | --- |
+| 参数量 | 82M |
+| 采样率 | 24 kHz |
+| 内存 | 约 150 MB；Kokoro 跑在 CPU 上，GPU 显存占用可忽略 |
+| 速度 | CPU 上实时，GPU 上更快 |
+| Instruct | 不支持（风格由预设音色本身决定） |
+| 许可 | Apache 2.0 |
+
+## Qwen CustomVoice：9 个精选音色与 instruct 控制
+
+Qwen CustomVoice 自带 9 位精选说话人，并支持**自然语言风格控制**——你告诉模型这句话该怎么说（「放慢语速，带点温度」，「权威、清晰」），它会调整语气、情绪和语速。
+
+两种模型规格：
+
+- **1.7B** — 完整质量，推荐的默认选择
+- **0.6B** — 更轻、更快，适合低配硬件
+
+**仓库：** [`Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice)（及 0.6B 版本）· 由阿里巴巴发布
+
+### 音色清单
+
+| 说话人 | 性别 | 语言 | 说明 |
+| --- | --- | --- | --- |
+| Vivian | 女 | 中文 | 明亮、略带锋利感的年轻女声 |
+| Serena | 女 | 中文 | 温暖、柔和的年轻女声 |
+| Uncle Fu | 男 | 中文 | 低沉醇厚的成熟男声 |
+| Dylan | 男 | 中文 | 年轻、清亮的北京男声 |
+| Eric | 男 | 中文 | 活泼、略带沙哑亮度的成都男声 |
+| Ryan | 男 | 英语 | 节奏感强的有力男声（默认） |
+| Aiden | 男 | 英语 | 阳光、中频清晰的美国男声 |
+| Ono Anna | 女 | 日语 | 俏皮、轻巧灵动的日语女声 |
+| Sohee | 女 | 韩语 | 情绪丰富的温暖韩语女声 |
+
+### 使用 instruct 模式
+
+在浮动生成框里选中 Qwen CustomVoice 配置文件，点击**表达指令**开关（生成按钮左侧的滑块图标）。主文本框下方会多出一个输入框：
+
+- 主文本 → 你想让声音说什么
+- Instruct 文本 → 你希望它怎么说
+
+有效的 instruct 提示示例：
+
+```text
+Speak slowly with emphasis, like reading bedtime stories
+Warm and friendly, conversational tone
+Professional and authoritative, broadcast quality
+Whisper, intimate and close
+Excited and energetic, like sports commentary
+```
+
+完整的 Generate 页面也会把 instruct 字段单独列为一个输入框。
+
+### Qwen CustomVoice 一览
+
+| 项目 | 值 |
+| --- | --- |
+| 参数量 | 1.7B / 0.6B |
+| 语言 | 音色覆盖中文、英语、日语、韩语；模型本身支持 10 种语言 |
+| 音色 | 9 位精选预设说话人 |
+| 显存 | 约 6 GB（1.7B）、约 2 GB（0.6B） |
+| 下载体积 | 约 3.5 GB（1.7B）、约 1.2 GB（0.6B） |
+| Instruct | 支持，自然语言风格控制 |
+| 克隆 | 不支持，克隆由配套的 Base Qwen3-TTS 引擎负责 |
+
+## 克隆还是预设：快速判断
+
+| 你的目标 | 选择 |
+| --- | --- |
+| 复刻某个特定人的声音 | [声音克隆](/docs/guide/voice-cloning) |
+| 不想准备音频，要能直接用的音色 | Kokoro 或 Qwen CustomVoice |
+| 占用越小越好（只用 CPU） | Kokoro |
+| 精细控制表达（语气、语速、情绪） | Qwen CustomVoice |
+| 语言覆盖最广 | 用 Chatterbox Multilingual（23 种语言）走[声音克隆](/docs/guide/voice-cloning) |
+
+## 限制
+
+<Aside type="caution">
+预设音色是固定的，无法微调或修改底层声音。如果你要的音色不在目录里，请改用克隆引擎并提供参考样本。
+</Aside>
+
+- 预设音色不能以音频形式导出到别的 Voicebox 安装里，只能作为配置文件元数据导出，指向同一个引擎的同一个音色 ID
+- Kokoro 的音色目录由上游模型决定，只有 hexgrad 发布新模型版本时才会有新音色
+- Qwen CustomVoice 的 9 位说话人是模型权重的一部分，同样受此限制
+
+## 下一步
+
+<CardGrid>
+  <Card title="声音克隆" href="/docs/guide/voice-cloning">用自己的音频克隆一个特定声音。</Card>
+  <Card title="生成语音" href="/docs/guide/generating-speech">用配置文件生成音频。</Card>
+  <Card title="故事编辑器" href="/docs/guide/stories">编排多角色叙事。</Card>
+</CardGrid>

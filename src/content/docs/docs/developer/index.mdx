@@ -1,0 +1,27 @@
+---
+title: 开发者指南
+description: Voicebox 的内部结构、扩展点与发布流程。
+sidebar:
+  group:
+    label: 开发者
+  order: 3
+---
+
+如果你想改引擎、加效果、调管线，或者只是想知道音频是怎么从文本变成文件的，从这里开始。架构页给出全局地图，其余页面按子系统展开。
+
+<CardGrid>
+  <Card title="环境搭建" href="/docs/developer/setup">Python 3.12、Bun、Rust 与 Tauri 的本地开发环境。</Card>
+  <Card title="架构总览" href="/docs/developer/architecture">Tauri 外壳、FastAPI 后端与 React 前端的职责边界。</Card>
+  <Card title="TTS 引擎" href="/docs/developer/tts-engines">引擎适配器、能力描述与注册新模型。</Card>
+  <Card title="生成管线" href="/docs/developer/tts-generation">分块、排队、流式返回与交叉淡入淡出。</Card>
+  <Card title="效果管线" href="/docs/developer/effects-pipeline">Pedalboard 效果链、预设存储与实时预览。</Card>
+  <Card title="转录子系统" href="/docs/developer/transcription">Whisper 规格、MLX 与 PyTorch 两条路径。</Card>
+  <Card title="配置文件与样本" href="/docs/developer/voice-profiles">数据模型、缓存与导入导出格式。</Card>
+  <Card title="模型管理" href="/docs/developer/model-management">下载、校验、加载/卸载与显存预算。</Card>
+  <Card title="故事数据模型" href="/docs/developer/stories">轨道、片段与时间线的存储方式。</Card>
+  <Card title="音频通道" href="/docs/developer/audio-channels">麦克风、系统音频与播放设备的抽象。</Card>
+  <Card title="历史与统计" href="/docs/developer/history">生成记录的写入、查询与存储占用统计。</Card>
+  <Card title="自动更新" href="/docs/developer/autoupdater">Tauri 更新器、签名与灰度。</Card>
+  <Card title="构建与打包" href="/docs/developer/building">PyInstaller、Tauri 打包与 CI 产物。</Card>
+  <Card title="贡献指南" href="/docs/developer/contributing">分支、提交信息、评审与发布节奏。</Card>
+</CardGrid>

@@ -1,0 +1,226 @@
+---
+title: TTS 生成管线
+description: 文本如何经过引擎抽象、分块、队列与后处理变成音频文件。
+sidebar:
+  order: 4
+---
+
+Voicebox 把八套 TTS 引擎放在同一个 `TTSBackend` Protocol 之后，路由与服务因此不需要按引擎分支。这一页讲一次生成请求如何穿过这层抽象，包括排队、分块、显存管理和接口契约。
+
+## `TTSBackend` 协议
+
+每个引擎都实现同一份契约（定义在 `backend/backends/__init__.py`）：
+
+```python
+@runtime_checkable
+class TTSBackend(Protocol):
+    async def load_model(self, model_size: str) -> None: ...
+    async def create_voice_prompt(
+        self, audio_path: str, reference_text: str, use_cache: bool = True
+    ) -> Tuple[dict, bool]: ...
+    async def combine_voice_prompts(
+        self, audio_paths: List[str], reference_texts: List[str]
+    ) -> Tuple[np.ndarray, str]: ...
+    async def generate(
+        self,
+        text: str,
+        voice_prompt: dict,
+        language: str = "en",
+        seed: Optional[int] = None,
+        instruct: Optional[str] = None,
+    ) -> Tuple[np.ndarray, int]: ...
+    def unload_model(self) -> None: ...
+    def is_loaded(self) -> bool: ...
+```
+
+## `ModelConfig` 注册表
+
+每个可下载的模型变体由一条 `ModelConfig` 描述：
+
+```python
+@dataclass
+class ModelConfig:
+    model_name: str       # "luxtts", "qwen-tts-1.7B", "kokoro"
+    display_name: str     # "LuxTTS (Fast, CPU-friendly)"
+    engine: str           # "luxtts", "qwen", "kokoro"
+    hf_repo_id: str       # "YatharthS/LuxTTS"
+    model_size: str = "default"
+    size_mb: int = 0
+    needs_trim: bool = False
+    retries_runaway: bool = False
+    supports_instruct: bool = False
+    languages: list[str] = field(default_factory=lambda: ["en"])
+```
+
+注册表辅助函数取代了原先的逐引擎 `if/elif`：
+
+- `get_all_model_configs()` — 全部 TTS + STT 变体
+- `get_tts_model_configs()` — 仅 TTS 变体
+- `get_model_config(model_name)` — 按名查找
+- `engine_needs_trim(engine)` — 输出是否需要过 `trim_tts_output()`
+- `engine_retries_runaway(engine)` — 输出不稳定时是否按更小分块重试
+- `load_engine_model(engine, model_size)` — 下载并加载，兼容多尺寸引擎
+- `get_tts_backend_for_engine(engine)` — 线程安全工厂，双重检查锁
+
+`TTS_ENGINES` 是已发布引擎名的权威列表：
+
+```python
+TTS_ENGINES = {
+    "qwen": "Qwen TTS",
+    "qwen_custom_voice": "Qwen CustomVoice",
+    "luxtts": "LuxTTS",
+    "chatterbox": "Chatterbox TTS",
+    "chatterbox_turbo": "Chatterbox Turbo",
+    "tada": "TADA",
+    "kokoro": "Kokoro",
+}
+```
+
+## 声音提示的三种形态
+
+`create_voice_prompt()` 返回的 dict 由各引擎自行决定结构，目前有三种：
+
+```python
+# 模式 A：预计算张量（Qwen3-TTS、LuxTTS）
+encoded = model.encode_prompt(audio_path)
+return encoded, False  # (prompt_dict, was_cached)
+
+# 模式 B：延迟文件路径（Chatterbox、Chatterbox Turbo、TADA）
+return {"ref_audio": audio_path, "ref_text": reference_text}, False
+
+# 模式 C：预设音色指针（Kokoro、Qwen CustomVoice）
+return {
+    "voice_type": "preset",
+    "preset_engine": "kokoro",
+    "preset_voice_id": "am_adam",
+}, False
+```
+
+模式 C 对应 `voice_type == "preset"` 的配置文件：没有克隆步骤，引擎按 ID 取内置音色。使用缓存的引擎会给缓存键加前缀，避免跨引擎碰撞：
+
+```python
+cache_key = f"{engine}_{hash(audio_path, reference_text)}"
+```
+
+## 设备选择
+
+引擎通过 `backends/base.py` 的 `get_torch_device()` 选设备，优先级为：
+
+1. `VOICEBOX_FORCE_CPU` 环境变量覆盖
+2. CUDA（编译进来且可用）
+3. XPU（Intel Arc，经 IPEX）
+4. MPS（Apple Silicon）——**仅限支持的引擎**；Chatterbox 与旧版 Qwen 路径因上游算子缺失会跳过 MPS 回落到 CPU
+5. CPU
+
+Qwen TTS 在 Apple Silicon 上不走 PyTorch，而是直接用 MLX 的 `mlx_backend.py`。
+
+## 生成流程
+
+从请求到音频文件：
+
+1. **请求** — `POST /generate`，请求体为 `GenerationRequest`：
+
+   ```json
+   {
+     "profile_id": "uuid",
+     "text": "...",
+     "language": "en",
+     "seed": 42,
+     "model_size": "1.7B",
+     "instruct": "warm, slightly amused",
+     "engine": "qwen",
+     "max_chunk_chars": 800
+   }
+   ```
+
+   `engine` 字段按正则 `^(qwen|qwen_custom_voice|luxtts|chatterbox|chatterbox_turbo|tada|kokoro)$` 校验。
+
+2. **路由** — `routes/generate.py` 校验并分发。
+3. **服务** — `services/generation.py` 取配置文件、经 `get_tts_backend_for_engine(engine)` 解析后端，并确保模型已加载（首次使用时带进度下载）。
+4. **声音提示** — 服务调用 `create_voice_prompt()`（或预设音色的等价流程）；克隆型配置文件有多个样本时，先 `combine_voice_prompts()` 合并参考音频。
+5. **队列** — 请求经 `services/task_queue.py` 串行化，避免多次生成争抢 GPU。
+6. **推理** — 引擎的 `generate()` 返回 `(audio_array, sample_rate)`。
+7. **校验与后处理** — `retries_runaway=True` 的引擎会把不稳定的输出按更小分块重试；`engine_needs_trim(engine)` 为真时用 `trim_tts_output()` 去掉尾部静音。效果链按生成版本应用，不作用在干净版本上。
+8. **持久化** — 音频写入 generations 目录，`generations` 表插入一行，响应返回生成元数据。
+
+## 长文本分块
+
+超过 `max_chunk_chars`（默认 800，范围 100–5000）的文本按句子边界切分，顺序生成后再交叉淡入淡出拼接。分块逻辑与引擎无关，位于服务层而不是各个后端。
+
+## 指令模式
+
+两个引擎支持自然语言风格控制（`instruct` 参数）：
+
+- **Qwen CustomVoice** — `supports_instruct=True`，完整接到模型的 instruct head。
+- **Qwen Base** — 静默丢弃指令文本（`supports_instruct=False`），前端对 Base 配置文件隐藏指令输入框。
+
+```python
+# 可用的指令写法
+"warm and conversational, slight smile"
+"whisper, intimate and close"
+"authoritative, broadcast quality"
+```
+
+其他引擎完全忽略 `instruct`。
+
+## 显存管理
+
+模型首次使用时惰性加载并常驻内存。切换尺寸（如 Qwen 1.7B ↔ 0.6B）会先卸载旧模型再加载新模型，避免 OOM：
+
+```python
+def unload_model(self):
+    if self.model is not None:
+        del self.model
+        self.model = None
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+```
+
+模型管理接口（`/models/load`、`/models/unload`）可以让用户手动释放显存，见[模型管理](/docs/developer/model-management)。
+
+## API 端点
+
+| 方法 | 端点 | 说明 |
+| --- | --- | --- |
+| POST | `/generate` | 从文本生成语音 |
+| GET | `/audio/{generation_id}` | 返回生成的音频文件 |
+
+### 响应结构
+
+```json
+{
+  "id": "generation_uuid",
+  "profile_id": "profile_uuid",
+  "text": "...",
+  "language": "en",
+  "audio_path": "/path/to/audio.wav",
+  "duration": 3.5,
+  "seed": 42,
+  "engine": "qwen",
+  "model_size": "1.7B",
+  "instruct": "...",
+  "created_at": "2026-04-18T10:30:00Z"
+}
+```
+
+## 性能
+
+- **CUDA** 是所有 PyTorch 引擎最快的后端；Apple Silicon 上 Qwen TTS 的 MLX 路径与 CUDA 大致相当。
+- **串行队列** — 每进程同一时刻只跑一次生成，并发请求排队。
+- **声音提示缓存** — 同一配置文件重复生成可省约 1–2 秒。
+- **模型常驻** — 首次加载（下载 + 加载）慢，之后复用内存中的模型。
+
+### 各引擎显存占用（CUDA，近似值）
+
+| 引擎 | 显存 |
+| --- | --- |
+| Kokoro | 约 150 MB |
+| LuxTTS | 约 1 GB |
+| Chatterbox Turbo | 约 1.5 GB |
+| Qwen 0.6B / Qwen CustomVoice 0.6B | 约 2 GB |
+| Chatterbox Multilingual | 约 3 GB |
+| Qwen 1.7B / Qwen CustomVoice 1.7B | 约 6 GB |
+| TADA 1B | 约 4 GB |
+| TADA 3B | 约 8 GB |
+
+新增引擎的完整流程见 [TTS 引擎](/docs/developer/tts-engines)，配置文件结构见[声音配置文件](/docs/developer/voice-profiles)。

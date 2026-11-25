@@ -1,0 +1,184 @@
+---
+title: 自动更新
+description: Tauri 更新器的签名校验流程，以及 CUDA 后端的两段式分发。
+sidebar:
+  order: 12
+---
+
+Voicebox 用 Tauri 内置更新器分发带签名的更新，安装前会做密码学校验。CUDA 后端因为体积过大，走另一套自建下载机制。
+
+## 更新流程
+
+生产版 Tauri 应用启动时会去 GitHub Releases 拉 `latest.json`，发现新版本后：
+
+1. **提示** — 顶部出现更新横幅
+2. **下载** — 用户点「Install Now」下载更新包
+3. **校验** — 用 `tauri.conf.json` 里内嵌的公钥做密码学验证
+4. **安装** — 校验通过后写入更新
+5. **重启** — 应用自动以新版本重启
+
+也可以在 **Settings → Check for Updates** 手动检查。开发模式（`just dev`、Web 模式）不会运行更新器。
+
+## 配置
+
+更新器配置在 `tauri/src-tauri/tauri.conf.json`：
+
+```json
+{
+  "plugins": {
+    "updater": {
+      "active": true,
+      "dialog": false,
+      "endpoints": [
+        "https://github.com/jamiepine/voicebox/releases/latest/download/latest.json"
+      ],
+      "pubkey": "PASTE_PUBLIC_KEY_CONTENT_HERE"
+    }
+  }
+}
+```
+
+- `endpoints` — `latest.json` 清单地址，启动时检查
+- `pubkey` — 校验更新签名的公钥
+- `dialog` — 设为 `false`，改用应用内自定义界面而不是 Tauri 自带对话框
+
+## 发布清单
+
+`latest.json` 按平台描述可用更新：
+
+```json
+{
+  "version": "0.2.0",
+  "notes": "Bug fixes and improvements",
+  "pub_date": "2026-01-25T12:00:00Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "base64_encoded_signature",
+      "url": "https://github.com/jamiepine/voicebox/releases/download/v0.2.0/voicebox_0.2.0_aarch64.app.tar.gz"
+    },
+    "darwin-x86_64": {
+      "signature": "base64_encoded_signature",
+      "url": "https://github.com/jamiepine/voicebox/releases/download/v0.2.0/voicebox_0.2.0_x64.app.tar.gz"
+    },
+    "linux-x86_64": {
+      "signature": "base64_encoded_signature",
+      "url": "https://github.com/jamiepine/voicebox/releases/download/v0.2.0/voicebox_0.2.0_amd64.AppImage"
+    },
+    "windows-x86_64": {
+      "signature": "base64_encoded_signature",
+      "url": "https://github.com/jamiepine/voicebox/releases/download/v0.2.0/voicebox_0.2.0_x64_en-US.msi"
+    }
+  }
+}
+```
+
+## 签名
+
+更新包必须签名才会被接受。一次性生成密钥：
+
+```bash title="终端"
+bun tauri signer generate -w ~/.tauri/voicebox.key
+```
+
+该命令产出两个文件：
+
+- 私钥 `~/.tauri/voicebox.key` — 只放进 GitHub Secrets，绝不提交
+- 公钥 `~/.tauri/voicebox.key.pub` — 粘贴进 `tauri.conf.json`
+
+构建时由 GitHub Actions 设置 `TAURI_SIGNING_PRIVATE_KEY`，Tauri 在构建过程中签名更新包，并在安装包旁边生成 `.sig` 签名文件。安装前更新器用公钥比对签名，不匹配就中止。
+
+## GitHub Actions
+
+`.github/workflows/release.yml` 会自动构建 macOS、Windows、Linux 的签名版本，生成带签名的 `latest.json`，并把所有产物上传到 GitHub Release。推送 tag 触发：
+
+```bash title="终端"
+git tag v0.2.0 && git push --tags
+```
+
+需要的仓库密钥：`TAURI_SIGNING_PRIVATE_KEY`（私钥内容）与 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`（私钥有密码时）。
+
+## 安全
+
+<Aside type="warning" title="私钥永不入库">
+私钥只放 GitHub Secrets。`tauri.conf.json` 里的公钥可以安全提交与分发。
+</Aside>
+
+- 更新包用 Ed25519 签名
+- 只允许 HTTPS，HTTP 端点被拒绝
+- 安装前完成签名校验，校验失败即中止
+
+## 排查
+
+| 现象 | 常见原因 |
+| --- | --- |
+| `Invalid signature` | `tauri.conf.json` 的公钥与签名用的私钥不匹配；或签名文件没上传到 Release |
+| 明明有新版本却提示「No update available」 | `latest.json` 的版本号没有高于当前版本；endpoint 配错；清单还没同步到 GitHub CDN |
+| 开发模式下检查更新失败 | 更新器只在生产 Tauri 构建里运行，`just dev` 与 Web 模式不跑 |
+| 构建时报签名错误 | Secrets 没设对；私钥文件缺失或损坏；密钥格式不对（内容应以 `dW50cnVzdGVkIGNvbW1lbnQ6` 开头） |
+
+## CUDA 后端更新
+
+CUDA 版后端单独分发，因为把 CUDA 打进安装包会让没有 NVIDIA 显卡的用户多下几个 GB。它不用 Tauri 更新器，而是 Python 服务里自带的下载系统。
+
+体积大致如下：标准 CPU 包（在安装器里）约 200–400 MB；CUDA server core 约 945 MB（随每个 Voicebox 版本更新）；CUDA libs 约 1.7 GB（版本独立，升级间可复用）。
+
+### 两段式归档
+
+自 v0.4 起 CUDA 二进制拆成两个归档：
+
+- **server core**（`voicebox-server-cuda-<platform>.tar.gz`，`<platform>` 为 `windows-x86_64` 或 `linux-x86_64`）— Python 服务与 PyTorch 代码，每个版本都变
+- **CUDA libs**（`cuda-libs-<platform>-cu128-v1.tar.gz`）— 沉重的 NVIDIA CUDA/cuDNN DLL，只在 CUDA 工具链大版本变化时重新下载
+
+因此多数升级只需重新拉那约 945 MB 的 server core，而不是完整约 2.5 GB 的包。
+
+### 下载流程
+
+用户在 **Settings → GPU** 点「Install CUDA backend」后：
+
+1. 下载并解压 server-core 归档
+2. 单独下载 CUDA libs（已装版本匹配则直接复用）
+3. 做 SHA-256 校验
+4. 解压到 `{data_dir}/backends/cuda/`
+5. 重启服务并切换到 CUDA 后端
+
+### 启动时自动更新
+
+启动时后端比较已安装的 server-core 版本与当前应用版本，不一致就在后台拉取。若新版本指定的 libs 版本也变了（少见，例如 cu126 → cu128），会提示用户确认这次更大的下载。
+
+### 存放位置
+
+```text
+{data_dir}/backends/cuda/
+├── voicebox-server-cuda.exe    # Windows
+├── voicebox-server-cuda        # macOS/Linux
+└── <NVIDIA CUDA runtime DLLs>
+```
+
+### 接口
+
+| 端点 | 方法 | 说明 |
+| --- | --- | --- |
+| `/backend/cuda-status` | GET | 后端是否可用/启用，已安装哪些版本 |
+| `/backend/download-cuda` | POST | 触发 server core + libs 下载 |
+| `/backend/cuda-progress` | GET | SSE 推送下载进度 |
+| `/backend/cuda` | DELETE | 删除已下载的 CUDA 后端 |
+
+进度事件形如：
+
+```text
+GET /backend/cuda-progress
+
+event: progress
+data: {"current": 52428800, "total": 945000000, "filename": "voicebox-server-cuda-windows-x86_64.tar.gz", "status": "downloading"}
+```
+
+前端订阅该端点显示实时进度，也能区分当前在下 server core 还是 libs。
+
+### 发布产物
+
+每个支持 CUDA 的版本会上传：
+
+- `voicebox-server-cuda-<platform>.tar.gz` 与对应 `.sha256`
+- `cuda-libs-<platform>-cu128-v1.tar.gz` 与对应 `.sha256`（仅 libs 版本变化时）
+
+`<platform>` 为 `windows-x86_64`（由 `build-cuda-windows` 构建）或 `linux-x86_64`（由 `build-gpu-linux` 矩阵任务构建，同时发布 `voicebox-server-rocm-linux-x86_64.tar.gz` 与 `rocm-libs-linux-x86_64-rocm7.2-v1.tar.gz`）。客户端用 `backend/utils/platform_detect.py` 的 `server_asset_platform()` 选择产物；macOS 与 Linux arm64 没有 GPU 产物，会在下载开始前就被拒绝。

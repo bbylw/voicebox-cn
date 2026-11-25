@@ -10,6 +10,9 @@
   完整的语音 I/O 链路，全部在本地机器上运行。
 </p>
 
+> **本仓库是 Voicebox 的简体中文站**（落地页 + 中文文档），不是应用源码。应用源码见 [jamiepine/voicebox](https://github.com/jamiepine/voicebox)。
+> 在线访问：[voicebox.ndjp.net](https://voicebox.ndjp.net) · 文档：[voicebox.ndjp.net/docs](https://voicebox.ndjp.net/docs/)
+
 <p align="center">
   <a href="https://github.com/jamiepine/voicebox/releases">
     <img src="https://img.shields.io/github/downloads/jamiepine/voicebox/total?style=flat&color=blue" alt="Downloads" />
@@ -466,6 +469,22 @@ voicebox/
 ```
 
 ---
+
+## 中文站开发
+
+本站是纯静态站点：[Astro](https://astro.build/) + [Nimbus](https://nimbus-docs.com/) 负责文档站，[Bun](https://bun.com) 负责依赖安装与构建。
+
+```bash
+bun install
+bun run dev      # http://localhost:4321
+bun run build    # 输出 dist/
+```
+
+- 落地页：`src/pages/index.astro`
+- 文档内容：`src/content/docs/docs/**/*.mdx`
+- 站点与侧边栏配置：`astro.config.ts`
+- 文档校对：`bun run lint:docs`；类型检查：`bun run typecheck`
+- 推送 `main` 后由 `.github/workflows/deploy.yml` 构建并发布到 GitHub Pages（自定义域名 `voicebox.ndjp.net`，CNAME 在 `public/CNAME`）
 
 ## 贡献
 

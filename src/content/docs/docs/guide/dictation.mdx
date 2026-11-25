@@ -1,0 +1,137 @@
+---
+title: 全局听写
+description: 在任意应用里按住快捷键说话，松开后转录文本粘贴回原来的输入框。
+sidebar:
+  order: 7
+---
+
+听写让你在本机任何地方把语音变成文本：按住一组快捷键说话，松开后 Voicebox 用 Whisper 转录，可选地让本地 LLM 清理，再把结果粘贴回你开始说话时聚焦的输入框。
+
+全部处理都在你的硬件上完成：没有云端、没有账号，音频不会离开这台机器。
+
+<Aside type="note" title="0.5.0 引入">
+听写在 0.5.0 与 **Captures** 标签页、按配置文件的人格模式一同推出。它补齐了 Voicebox 语音 I/O 闭环中输入的那一半，克隆与 TTS 仍是「输出」的一半。
+</Aside>
+
+## 工作流程
+
+<Steps>
+  <Step title="按住快捷键">
+    在本机任何位置按住这组快捷键，当前应用上方会淡入一个小胶囊。
+  </Step>
+  <Step title="说话">
+    胶囊显示 `Recording`、实时波形和已用时间。自然说话即可，不用等任何提示。
+  </Step>
+  <Step title="松开">
+    松开后胶囊切到 `Transcribing`；如果开着自动润色，再切到 `Refining`，随后消失。
+  </Step>
+  <Step title="文本落进你的应用">
+    如果启用了自动粘贴且 Voicebox 拿到了辅助功能权限，转录会粘贴到你开始说话时聚焦的输入框，而不是说话期间焦点漂移到的位置。
+  </Step>
+</Steps>
+
+无论有没有自动粘贴，每次听写都会连同原始音频出现在 **Captures** 标签页，音频与转录配对保存。之后能做什么见 [Captures](/docs/guide/captures)。
+
+## 按住说话与切换模式
+
+Voicebox 内置两种快捷键行为：
+
+| 模式 | 默认（macOS） | 默认（Windows） | 行为 |
+| --- | --- | --- | --- |
+| **按住说话（Push-to-talk）** | 右 `⌘` + 右 `⌥` | 右 `Ctrl` + 右 `Shift` | 松开快捷键即停止录音。 |
+| **切换模式（Toggle-to-talk）** | 在按住说话的组合上再加 `Space` | 在按住说话的组合上再加 `Space` | 再点一次快捷键才停止录音。 |
+
+按住说话（PTT）时中途点一下 `Space`，会在不打断音频的情况下把「按住」升级为「切换」会话。这样短句来得快，长段口述可以解放双手，开始前也不用先决定用哪种模式。
+
+## 屏幕上的浮动胶囊
+
+听写时，当前应用上方会出现一个浮动胶囊，依次经历采集流程的各个状态：
+
+| 状态 | 显示内容 |
+| --- | --- |
+| `Recording` | 实时波形 + 已用时间。 |
+| `Transcribing` | Whisper 运行时的思考波形。 |
+| `Refining` | LLM 清理转录时的同一思考波形（仅在开启自动润色时出现）。 |
+| 错误 | 红色着色。点击胶囊可把错误复制到剪贴板，随后自动消失。 |
+
+胶囊透明、始终置顶，并在应用启动时预先创建为隐藏状态，所以按下快捷键即刻出现，没有窗口闪烁。
+
+## 自定义快捷键
+
+打开 **Settings → Captures → Dictation** 修改两组快捷键。
+
+- **左右修饰键徽标。** 在快捷键选择器里按住按键时，Voicebox 会记录每个修饰键是左键还是右键。因此你可以只绑定右 `⌥` 而保留左 `⌥`——一只手听写，另一只手的快捷键不受影响。
+- **默认值刻意避开常用组合。** macOS 上默认使用右手 `Cmd+Option`，把 `Cmd+Option+I`（devtools）、`Cmd+Option+Esc`（强制退出）和 `Cmd+Option+Space`（Spotlight）都留给你。Windows 上默认绕开德语、法语、西班牙语布局里 `Ctrl+Alt` 合成 AltGr 的冲突。
+- **即时生效。** 在 Settings 里改完快捷键立刻生效，不用重启，也不用重新加载页面。
+
+## 自动粘贴到聚焦的应用
+
+转录完成后，Voicebox 可以合成一次原生粘贴，发到按下快捷键时聚焦的那个输入框。剪贴板内容会在粘贴前保存、粘贴后恢复，不会弄丢你复制的东西。
+
+| 平台 | 机制 |
+| --- | --- |
+| macOS | 在 HID tap 上通过 `CGEventPost` 发送完整的 `⌘V` 按键序列，之前用 `NSRunningApplication` 重新激活原应用。 |
+| Windows | 用扫描码正确的 `SendInput`，并配合 `SetForegroundWindow` + `AttachThreadInput` 握手，绕过前台锁，从而粘贴到按下快捷键时并不在最前的窗口。 |
+
+**焦点在按下快捷键时就已快照。** 即使转录或润色期间焦点漂移，粘贴仍指向原来的输入框——它粘贴到「你说话时所处的位置」，而不是「你现在看的位置」。
+
+<Aside type="note">
+自动粘贴是可选项。macOS 上没有辅助功能权限，或你不想启用合成输入时，听写照常工作：转录会落在 Captures 标签页，可以手动复制。这个开关就在 **Settings → Captures → Dictation** 的辅助功能提示旁边，而不是全局横幅。
+</Aside>
+
+## 润色
+
+打开自动润色后，本地 LLM 会在粘贴前清理 Whisper 的原始转录。目标是去掉口语杂物，而不是改写你真正说过的内容。
+
+润色通常会修掉：
+
+- 填充词（`um`、`uh`、用作停顿的 `like`、`you know`）
+- 自我更正——LLM 保留最终版本，丢掉之前的尝试（`could you uh run the migration real quick, and then, yeah, check the logs` → `Could you run the migration, then check the logs?`）
+- 基本标点与大小写
+- Whisper 循环幻觉——在转录送进 LLM **之前**，Voicebox 会先剥掉连续重复的 token（连续六个及以上相同 token，不区分大小写），这样小的润色模型不会把幻觉再复述回来
+
+润色会刻意保留：
+
+- 技术术语和代码标识符（`npm install`、`handleSubmit`）
+- 合法的重复（`no, no, no, no, no` 不足六个相同 token，会保留）
+- 你的原意——润色是清理，不是重写
+
+每次听写都会保存一份参数快照，所以以后可以用不同参数重新润色同一份原始转录，不会丢掉原文。润色模型选择器在 **Settings → Captures → Refinement**，提供三档内置 Qwen3：
+
+| 模型 | 大小 | 适用场景 |
+| --- | --- | --- |
+| Qwen3 0.6B | 约 400 MB | 默认。很快，适合日常听写。 |
+| Qwen3 1.7B | 约 1.1 GB | 转录里常出现代码标识符时的平衡点。 |
+| Qwen3 4B | 约 2.5 GB | 完整质量，最慢。 |
+
+这也是按配置文件的人格模式所用的同一个本地 LLM：应用里只有一个 LLM，不是两个。见[声音人格](/docs/guide/voice-personalities)。
+
+## 平台说明
+
+### macOS
+
+- **自动粘贴需要辅助功能权限。** 提示就在 **Settings → Captures → Dictation** 的开关旁边，并带有跳转到 **System Settings → Privacy & Security → Accessibility** 的链接。
+- **TSM 崩溃缓解。** 全局热键监听跑在后台线程上，并设置 `set_is_main_thread(false)`，以避开 `rdev` 库在 macOS 14+ 上的已知崩溃。如果在 macOS 上遇到莫名其妙的听写失败，检查日志里有没有 TSM 相关消息。
+
+### Windows
+
+- **UAC / UIPI 限制。** 非提权的 Voicebox 无法向**提权**窗口合成粘贴，这是 Windows 本身的限制。如果你经常往提权应用（比如提权终端或任务管理器）里听写，请以提权方式运行 Voicebox。
+- **默认使用右手快捷键**（`Ctrl+Shift`），绕开 `Ctrl+Alt` 作为组合键的键盘布局（德语、法语、西班牙语等）上的 AltGr 冲突。
+
+### Linux
+
+- **本版本尚未支持。** Rust shim 在 0.5.0 只带 macOS 和 Windows 路径。Linux 的 `uinput` / AT-SPI 支持与 Wayland 粘贴方案记录在仓库的 `docs/plans/VOICE_IO.md`。
+
+## 自动粘贴会跳过的情形
+
+- **按下快捷键时焦点在 Voicebox 内。** 转录只进 Captures 标签页，避免「对着 Voicebox 听写」时误粘贴进生成框。
+- **没有检测到文本焦点。** 转录仍会落在 Captures 标签页，一键复制即可。
+- **macOS 上没有辅助功能权限。** 同样只进 Captures 标签页。
+
+## 下一步
+
+<CardGrid>
+  <Card title="Captures" href="/docs/guide/captures">每次听写落进的音频与转录归档。</Card>
+  <Card title="声音人格" href="/docs/guide/voice-personalities">同一个本地 LLM 驱动的按配置文件创作与人格改写。</Card>
+  <Card title="转录" href="/docs/developer/transcription">Whisper、Whisper Turbo 与 STT 后端的开发者细节。</Card>
+</CardGrid>

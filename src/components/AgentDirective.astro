@@ -1,0 +1,34 @@
+---
+interface Props {
+  /** Absolute or site-relative URL for this page's markdown version, or
+   *  `null` when the page has no per-page Markdown (a non-default
+   *  query-mode API version) — the directive then points at the index only. */
+  markdownUrl?: string | null;
+  /** Absolute or site-relative URL for the top-level llms.txt index, or
+   *  `null` when no route of the site serves one. */
+  llmsUrl?: string | null;
+}
+
+const { markdownUrl, llmsUrl } = Astro.props;
+---
+
+{/* Read by screen readers and agents; out of the Tab order, so keyboard users
+    don't land on links they can't see. Nothing to point at, nothing said. */}
+{(markdownUrl || llmsUrl) && (
+  <aside class="sr-only" aria-label="面向 AI 智能体" data-ai-agent-directive>
+    {markdownUrl && llmsUrl ? (
+      <Fragment>
+        本页提供 Markdown 版本，建议 AI 直接读取：本页 <a tabindex="-1" href={markdownUrl}>{markdownUrl}</a>，
+        或完整文档索引 <a tabindex="-1" href={llmsUrl}>{llmsUrl}</a>。
+      </Fragment>
+    ) : markdownUrl ? (
+      <Fragment>
+        本页提供 Markdown 版本，建议 AI 直接读取：<a tabindex="-1" href={markdownUrl}>{markdownUrl}</a>。
+      </Fragment>
+    ) : (
+      <Fragment>
+        完整文档索引见 <a tabindex="-1" href={llmsUrl}>{llmsUrl}</a>，建议 AI 直接读取 Markdown。
+      </Fragment>
+    )}
+  </aside>
+)}

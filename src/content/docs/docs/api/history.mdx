@@ -1,0 +1,129 @@
+---
+title: 生成历史
+description: 查询、统计与删除生成记录，含成功与失败的条目。
+sidebar:
+  order: 3
+---
+
+历史接口围绕生成记录展开：列表、单条详情、汇总统计与删除。列表和详情都会带上配置文件名称，并包含失败记录，便于排查是哪一次生成出了问题。
+
+## `GET /history`
+
+分页查询生成历史，按创建时间倒序返回，最新在前。
+
+| 查询参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `profile_id` | string | 否 | 只返回该声音配置文件的记录 |
+| `search` | string | 否 | 在 `text` 里做子串匹配，命中才返回 |
+| `limit` | integer | 否 | 每页条数，默认 `50`，范围 1–100 |
+| `offset` | integer | 否 | 跳过条数，默认 `0`，用于翻页 |
+
+```json title="200 OK"
+{
+  "items": [
+    {
+      "id": "3f6c2a10-9b4e-4d21-8f7a-1c2d3e4f5a6b",
+      "profile_id": "7c1d0e2a-5b3f-4a9c-9d8e-0f1a2b3c4d5e",
+      "profile_name": "旁白",
+      "text": "欢迎使用 Voicebox。",
+      "language": "zh",
+      "audio_path": "generations/3f6c2a10-9b4e-4d21-8f7a-1c2d3e4f5a6b.wav",
+      "duration": 2.86,
+      "seed": 42,
+      "instruct": null,
+      "engine": "qwen",
+      "model_size": "1.7B",
+      "status": "completed",
+      "error": null,
+      "is_favorited": false,
+      "created_at": "2025-03-18T09:12:44Z",
+      "versions": null,
+      "active_version_id": null
+    }
+  ],
+  "total": 1
+}
+```
+
+`total` 是过滤后的总数，与 `limit` 无关，用来算翻页。`status` 为 `failed` 时看 `error` 里的原因；`versions` 只在存在历史版本的记录上出现，每项包含 `id`、`generation_id`、`label`、`audio_path`、`effects_chain`、`is_default` 与 `created_at`。
+
+```bash title="终端"
+curl "http://127.0.0.1:17493/history?profile_id=7c1d0e2a-5b3f-4a9c-9d8e-0f1a2b3c4d5e&limit=20&offset=0"
+```
+
+错误：`422` 参数不合法，例如 `limit` 超过 100 或 `offset` 为负。
+
+## `GET /history/{generation_id}`
+
+读取单条生成记录的详情，字段与列表元素相同。
+
+路径参数：`generation_id`（string，必填）。
+
+```json title="200 OK（省略空字段）"
+{
+  "id": "3f6c2a10-9b4e-4d21-8f7a-1c2d3e4f5a6b",
+  "profile_id": "7c1d0e2a-5b3f-4a9c-9d8e-0f1a2b3c4d5e",
+  "profile_name": "旁白",
+  "text": "欢迎使用 Voicebox。",
+  "language": "zh",
+  "duration": 2.86,
+  "engine": "qwen",
+  "status": "completed",
+  "created_at": "2025-03-18T09:12:44Z"
+}
+```
+
+```bash title="终端"
+curl http://127.0.0.1:17493/history/3f6c2a10-9b4e-4d21-8f7a-1c2d3e4f5a6b
+```
+
+错误：`404 Generation not found`，ID 不存在。
+
+## `GET /history/stats`
+
+返回全局统计：生成总数、累计时长，以及每个配置文件各生成多少条。
+
+```json title="200 OK"
+{
+  "total_generations": 12,
+  "total_duration_seconds": 843.7,
+  "generations_by_profile": {
+    "7c1d0e2a-5b3f-4a9c-9d8e-0f1a2b3c4d5e": 9,
+    "e3a1b2c4-1d5f-4e6a-9b8c-7d6e5f4a3b2c": 3
+  }
+}
+```
+
+`generations_by_profile` 的键是配置文件 ID，值是记录条数；没有生成记录的配置文件不会出现在这里。没有请求参数。
+
+```bash title="终端"
+curl http://127.0.0.1:17493/history/stats
+```
+
+错误：无业务错误码。
+
+## `DELETE /history/{generation_id}`
+
+删除一条生成记录，连同它的音频文件与历史版本。
+
+```json title="200 OK"
+{
+  "message": "Generation deleted successfully"
+}
+```
+
+```bash title="终端"
+curl -X DELETE http://127.0.0.1:17493/history/3f6c2a10-9b4e-4d21-8f7a-1c2d3e4f5a6b
+```
+
+错误：`404 Generation not found`，ID 不存在。
+
+<Aside type="tip" title="批量清理失败记录">
+  `DELETE /history/failed` 会删掉所有 `status` 为 `failed` 的记录，返回 `{"deleted": 3}` 这样的计数，适合在排查完后一次清空。
+</Aside>
+
+## 相关页面
+
+- [生成历史](/docs/guide/generation-history)：界面里的查看与重新生成。
+- [语音生成](/docs/api/generation)：提交生成并取回音频。
+- [历史与存储](/docs/developer/history)：数据库字段与文件布局。

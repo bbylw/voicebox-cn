@@ -1,0 +1,161 @@
+---
+title: 模型管理
+description: 查看模型状态与下载进度，触发下载、加载和卸载。
+sidebar:
+  order: 4
+---
+
+模型接口用来查看哪些模型已下载、正在下载或已加载到内存，并按需触发下载、加载与卸载。所有接口里的 `model_name` 都使用 `GET /models/status` 返回的 ID，不要传显示名。
+
+可用的 ID 分三类：
+
+- TTS：`qwen-tts-1.7B`、`qwen-tts-0.6B`、`qwen-custom-voice-1.7B`、`qwen-custom-voice-0.6B`、`qwen-voice-design-1.7B`、`luxtts`、`chatterbox-tts`、`chatterbox-turbo`、`tada-1b`、`tada-3b-ml`、`kokoro`、`omnivoice`
+- 转录：`whisper-base`、`whisper-small`、`whisper-medium`、`whisper-large`、`whisper-turbo`
+- 本地 LLM：`qwen3-0.6b`、`qwen3-1.7b`、`qwen3-4b`
+
+## `GET /models/status`
+
+列出全部注册模型的状态，无请求参数。
+
+```json title="200 OK"
+{
+  "models": [
+    {
+      "model_name": "qwen-tts-1.7B",
+      "display_name": "Qwen TTS 1.7B",
+      "hf_repo_id": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+      "downloaded": true,
+      "downloading": false,
+      "size_mb": 3421.6,
+      "loaded": true
+    },
+    {
+      "model_name": "whisper-turbo",
+      "display_name": "Whisper Turbo",
+      "hf_repo_id": "openai/whisper-large-v3-turbo",
+      "downloaded": false,
+      "downloading": true,
+      "size_mb": null,
+      "loaded": false
+    }
+  ]
+}
+```
+
+`downloaded` 表示权重已在本地缓存，`loaded` 表示当前在内存里，`size_mb` 是磁盘占用（MB）。`downloading` 为 `true` 时服务端会把 `downloaded` 置为 `false`、`size_mb` 置为 `null`。`hf_repo_id` 随平台后端变化，例如 Qwen 系列在 MLX 版应用里指向 `mlx-community` 下的仓库。
+
+```bash title="终端"
+curl http://127.0.0.1:17493/models/status
+```
+
+错误：无业务错误码。
+
+## `GET /models/progress/{model_name}`
+
+订阅某个模型的下载进度，响应是 `text/event-stream`，不是一次性 JSON。
+
+路径参数：`model_name`（string，必填，不做存在性校验）。
+
+每个事件是一行 `data: <JSON>`，字段如下：
+
+| 字段 | 说明 |
+| --- | --- |
+| `model_name` | 模型 ID |
+| `current`、`total` | 已下载与总字节数 |
+| `progress` | 百分比，0–100 |
+| `filename` | 当前正在下载的文件 |
+| `status` | `downloading`、`extracting`、`complete`、`error` |
+| `timestamp` | 事件生成时间，ISO 8601 |
+
+```text title="事件流"
+data: {"model_name": "whisper-turbo", "current": 73400320, "total": 162529280, "progress": 45.2, "filename": "model.bin", "status": "downloading", "timestamp": "2025-03-18T09:15:02.401120"}
+
+: heartbeat
+```
+
+没有新进度时每秒发一条 `: heartbeat` 注释行保活；收到 `complete` 或 `error` 后服务端主动关闭连接。
+
+```bash title="终端"
+curl -N http://127.0.0.1:17493/models/progress/whisper-turbo
+```
+
+错误：没有业务错误码，HTTP 200 即表示流已建立。
+
+## `POST /models/load`
+
+把模型加载进内存，返回时即可用于生成或转录。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `model_name` | string | 否 | 要加载的模型 ID；省略时加载默认 Qwen TTS |
+| `model_size` | string | 否 | 仅在省略 `model_name` 时生效，默认 `1.7B`，可选 `1.7B`、`0.6B`；也可用查询参数 `?model_size=0.6B` |
+
+```json title="200 OK"
+{
+  "message": "Model kokoro loaded successfully"
+}
+```
+
+显式传了 `model_name` 就只加载那个模型；传空字符串会被当成非法请求。省略 `model_name` 时才回退到默认 Qwen TTS，这也是旧版 `?model_size=` 调用的行为。
+
+```bash title="终端"
+curl -X POST http://127.0.0.1:17493/models/load \
+  -H "Content-Type: application/json" \
+  -d '{"model_name": "kokoro"}'
+```
+
+错误：`400` 未知的 `model_name`，`detail` 会列出可用 ID；`500` 加载失败，`detail` 是底层错误。
+
+## `POST /models/unload`
+
+把模型从内存或显存里卸掉，磁盘上的权重不受影响。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `model_name` | string | 否 | 要卸载的模型 ID；省略时卸载默认 Qwen TTS |
+
+```json title="200 OK"
+{
+  "message": "Model kokoro unloaded successfully"
+}
+```
+
+模型本来就没加载时返回 200，消息变成 `Model kokoro is not loaded`。
+
+```bash title="终端"
+curl -X POST http://127.0.0.1:17493/models/unload \
+  -H "Content-Type: application/json" \
+  -d '{"model_name": "kokoro"}'
+```
+
+错误：`400` 未知的 `model_name`；`500` 卸载失败。
+
+## `POST /models/download`
+
+触发模型下载，立刻返回，下载在后台进行。
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `model_name` | string | 是 | 要下载的模型 ID |
+
+```json title="200 OK"
+{
+  "message": "Model whisper-turbo download started"
+}
+```
+
+进度用 `GET /models/progress/whisper-turbo` 订阅；完成后 `GET /models/status` 里该模型的 `downloaded` 变为 `true`。
+
+```bash title="终端"
+curl -X POST http://127.0.0.1:17493/models/download \
+  -H "Content-Type: application/json" \
+  -d '{"model_name": "whisper-turbo"}'
+```
+
+错误：`400` 未知的 `model_name`。下载过程中的网络错误不会体现在这次响应里，要监听进度流的 `error` 事件。
+
+## 相关页面
+
+- [模型管理](/docs/developer/model-management)：缓存目录、环境变量与迁移。
+- [显存与 GPU 加速](/docs/getting-started/gpu-acceleration)：显存不够时如何换小模型。
+- [语音生成](/docs/api/generation)：生成时如何选择引擎与 `model_size`。

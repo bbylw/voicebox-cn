@@ -1,0 +1,48 @@
+---
+title: Voicebox 中文文档
+description: 本地优先的开源 AI 语音工作室：克隆声音、生成语音、全局听写，并让智能体用你的声音说话。
+sidebar:
+  group:
+    label: 文档
+  order: 0
+  label: 概览
+---
+
+Voicebox 把整条语音链路放进一个桌面应用里：一边是语音输出（8 种 TTS 引擎、零样本克隆、声音人格、故事编辑器），另一边是语音输入（全局听写、Whisper 转录、Captures 归档）。两边共用一个极小的系统级悬浮胶囊，你始终知道机器什么时候在听、什么时候在说。
+
+所有推理都在你的机器上完成——Apple Silicon 走 MLX，Windows 和 Linux 走 PyTorch（CUDA / ROCm / DirectX 12 / XPU）。首次下载模型需要联网，之后可以完全离线工作。
+
+<Aside type="note" title="与上游同步">
+  本中文站同步上游 `jamiepine/voicebox` 的 v0.6.0（提交 `8dc2a5b`），内容依据官方文档 [docs.voicebox.sh](https://docs.voicebox.sh/) 翻译整理。引擎、接口等标识符保留英文。
+</Aside>
+
+## 从这里开始
+
+- [安装 Voicebox](/docs/getting-started/installation) —— 下载安装包，或在 Docker、Linux 源码里跑起来
+- [快速开始](/docs/getting-started/quick-start) —— 五分钟内克隆一个声音并生成第一段语音
+- [全局听写](/docs/guide/dictation) —— 在任何应用里按住快捷键说话，松手就完成输入
+- [MCP 服务器](/docs/guide/mcp-server) —— 让 Claude Code、Cursor 用你克隆的声音说话
+
+## 文档结构
+
+<CardGrid>
+  <Card title="入门" href="/docs/getting-started/">安装、Docker、GPU 加速、远程模式与故障排查。</Card>
+  <Card title="使用指南" href="/docs/guide/">克隆、预设音色、生成、听写、Captures、故事编辑器与声音人格。</Card>
+  <Card title="开发者指南" href="/docs/developer/">架构、TTS 引擎与生成管线、效果链、模型管理、构建与发布。</Card>
+  <Card title="API 参考" href="/docs/api/">REST 端点、请求与响应示例、MCP 工具。</Card>
+</CardGrid>
+
+## 关于项目
+
+- [常见问题](/docs/about/faq) —— 免费吗、能离线吗、引擎怎么选
+- [路线图](/docs/about/roadmap) —— 正在做的与计划中的功能
+- [安全与隐私](/docs/about/security) —— 数据边界与漏洞报告
+- [关于项目](/docs/about/) —— 许可证、链接与致谢
+
+## 本站的技术栈
+
+这个站点本身就是一次技术栈迁移的结果：内容用 Markdown/MDX 写在仓库里，由 [Nimbus](https://nimbus-docs.com/)（Astro 文档框架）负责校验、侧边栏、搜索与面向智能体的 `/llms.txt`，构建和依赖管理全部交给 [Bun](https://bun.com)。每次 `git push` 由 GitHub Actions 构建并发布到 GitHub Pages。
+
+## 许可
+
+Voicebox 采用 MIT 许可证。本中文站是社区翻译，与上游项目无隶属关系。

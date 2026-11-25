@@ -1,0 +1,60 @@
+---
+title: 常见问题
+description: 关于免费、离线、语言支持、听写与引擎选择的短答案。
+sidebar:
+  order: 1
+---
+
+### Voicebox 是完全免费的吗？
+
+是。Voicebox 以 MIT 许可证开源，没有订阅、没有额度限制，也不会把音频上传到云端。
+
+### 需要联网才能用吗？
+
+只有首次下载模型时需要网络。模型缓存到本地之后，生成、克隆、转录都可以离线完成。
+
+### 支持哪些语言？
+
+取决于引擎：Chatterbox Multilingual 覆盖 23 种语言，Qwen 系列与 TADA 为 10 种，Kokoro 为 8 种，LuxTTS 和 Chatterbox Turbo 只支持英语。具体列表见[预设音色](/docs/guide/preset-voices)与[声音克隆](/docs/guide/voice-cloning)。
+
+### 全局听写怎么用？
+
+在任意应用里按住听写组合键说话，松开即完成输入。macOS 默认是右 ⌘ + 右 ⌥，Windows 默认是右 Ctrl + 右 Shift。macOS 首次使用需要在应用引导里授予「辅助功能」与「输入监控」权限。按住期间点按空格可以切换成持续录音。详见[全局听写](/docs/guide/dictation)。
+
+### 听写内容保存在哪里？
+
+每次听写、应用内录音和上传的音频都会进入 Captures，原始音频与转录文本成对保存在 Voicebox 数据目录里，可以回放、重新转录或润色。详见 [Captures](/docs/guide/captures)。
+
+### 怎么让智能体用我的声音说话？
+
+在支持 MCP 的客户端里添加 `http://127.0.0.1:17493/mcp`，然后在 **Settings → MCP** 中为该客户端绑定声音配置文件。之后智能体调用 `voicebox_speak` 就会用这个声音朗读。不支持 MCP 的场景可以直接调用 `POST /speak`。详见 [MCP 服务器](/docs/guide/mcp-server)。
+
+### 8 种引擎怎么选？
+
+- 多语言克隆：Qwen3-TTS 或 Chatterbox Multilingual
+- 不想提供参考音频：Qwen CustomVoice（9 种预设）或 Kokoro（50 种预设，82M 参数）
+- 用文字描述创造音色：Qwen VoiceDesign
+- 要速度：LuxTTS 或 Chatterbox Turbo
+- 要长音频和强表现力：TADA
+
+完整对照见[开发者：TTS 引擎](/docs/developer/tts-engines)。
+
+### 克隆的声音能商用吗？
+
+可以，但你需要确保拥有所克隆声音的合法使用权，并遵守所在地法律。未经同意克隆他人声音可能侵权。
+
+### 为什么生成很慢？
+
+速度取决于 GPU、所选引擎、文本长度和系统负载。在 CPU 上运行会明显变慢；NVIDIA CUDA 与 Apple Silicon（MLX）最快。可以先看[GPU 加速](/docs/getting-started/gpu-acceleration)。
+
+### 怎么提高克隆质量？
+
+用干净、无底噪的样本；提供 3–5 段不同语气的样本；总时长 30 秒以上；选择与目标语言匹配的引擎。
+
+### 能在服务器上跑吗？
+
+可以。用 [Docker](/docs/getting-started/docker) 起后端，再通过[远程模式](/docs/getting-started/remote-mode)连接桌面端。注意 GPU 的分配与显存占用。
+
+### 怎么反馈问题或提功能？
+
+到[上游仓库](https://github.com/jamiepine/voicebox/issues)提 issue；中文文档的问题请提到[本站仓库](https://github.com/bbylw/voicebox-cn/issues)。

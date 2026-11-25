@@ -1,0 +1,180 @@
+---
+title: 声音配置文件
+description: 克隆型、预设型与设计型配置文件的数据模型、文件布局与核心函数。
+sidebar:
+  order: 7
+---
+
+声音配置文件是 Voicebox 里「一份保存下来的声音」的单位。0.4 起同一张 `profiles` 表承载两种形态：保存参考音频的克隆型，和只存引擎内音色指针的预设型；第三种 `designed` 预留给用文本描述的声音，目前没有引擎实际使用。
+
+## 三种形态
+
+| `voice_type` | `preset_engine` | `preset_voice_id` | `profile_samples` |
+| --- | --- | --- | --- |
+| `cloned` | NULL | NULL | 必须有至少一行 |
+| `preset` | 引擎名 | 音色 ID 字符串 | 无 |
+| `designed` | NULL | NULL | 无（用 `design_prompt`） |
+
+克隆型在使用时由克隆引擎现场生成声音嵌入；预设型指向引擎内置音色（如 Kokoro 的 `am_adam`、Qwen CustomVoice 的 `Ryan`）；设计型用一段文本描述定义音色。
+
+## 数据模型
+
+```python title="backend/database/models.py"
+class VoiceProfile(Base):
+    __tablename__ = "profiles"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, unique=True, nullable=False)
+    description = Column(Text)
+    language = Column(String, default="en")
+    avatar_path = Column(String, nullable=True)
+    effects_chain = Column(Text, nullable=True)
+
+    # 声音类型系统（v0.3.x 引入）
+    voice_type = Column(String, default="cloned")    # "cloned" | "preset" | "designed"
+    preset_engine = Column(String, nullable=True)    # 如 "kokoro"，仅预设型
+    preset_voice_id = Column(String, nullable=True)  # 如 "am_adam"，仅预设型
+    design_prompt = Column(Text, nullable=True)      # 文本描述，仅设计型（预留）
+    default_engine = Column(String, nullable=True)   # 自动选定的引擎，预设型锁定
+
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+```
+
+`default_engine` 在配置文件创建时自动写入。预设型锁死来源引擎：生成时若切到别的引擎，该配置文件会被跳过（用户点灰掉的卡片时，界面会自动切回）。
+
+```python title="profile_samples"
+class ProfileSample(Base):
+    __tablename__ = "profile_samples"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    profile_id = Column(String, ForeignKey("profiles.id"))
+    audio_path = Column(String, nullable=False)
+    reference_text = Column(Text, nullable=False)
+```
+
+只有克隆型会往这张表写数据，预设型与设计型始终为零行。
+
+## 文件布局
+
+```text title="data/profiles"
+data/profiles/{profile_id}/
+├── {sample_id_1}.wav
+└── {sample_id_2}.wav
+```
+
+预设型与设计型没有磁盘音频。
+
+## 核心函数
+
+业务逻辑在 `backend/services/profiles.py`，按 `voice_type` 分发到对应引擎。
+
+### 创建配置文件
+
+```python
+async def create_profile(data: VoiceProfileCreate, db: Session) -> VoiceProfileResponse:
+    db_profile = DBVoiceProfile(
+        id=str(uuid.uuid4()),
+        name=data.name,
+        description=data.description,
+        language=data.language,
+    )
+    db.add(db_profile)
+    db.commit()
+
+    profile_dir = profiles_dir / db_profile.id
+    profile_dir.mkdir(parents=True, exist_ok=True)
+
+    return VoiceProfileResponse.model_validate(db_profile)
+```
+
+### 添加样本
+
+```python
+async def add_profile_sample(
+    profile_id: str, audio_path: str, reference_text: str, db: Session,
+) -> ProfileSampleResponse:
+    # 1. 校验音频（时长、格式、质量）
+    is_valid, error_msg = validate_reference_audio(audio_path)
+    if not is_valid:
+        raise ValueError(f"Invalid reference audio: {error_msg}")
+
+    # 2. 复制到配置文件目录
+    sample_id = str(uuid.uuid4())
+    dest_path = profile_dir / f"{sample_id}.wav"
+    audio, sr = load_audio(audio_path)
+    save_audio(audio, str(dest_path), sr)
+
+    # 3. 写入数据库
+    db_sample = DBProfileSample(
+        id=sample_id,
+        profile_id=profile_id,
+        audio_path=str(dest_path),
+        reference_text=reference_text,
+    )
+    db.add(db_sample)
+    db.commit()
+```
+
+### 生成声音提示
+
+```python
+async def create_voice_prompt_for_profile(profile_id: str, db: Session) -> dict:
+    samples = db.query(DBProfileSample).filter_by(profile_id=profile_id).all()
+
+    if len(samples) == 1:
+        voice_prompt, _ = await tts_model.create_voice_prompt(
+            samples[0].audio_path, samples[0].reference_text,
+        )
+    else:
+        combined_audio, combined_text = await tts_model.combine_voice_prompts(
+            [s.audio_path for s in samples],
+            [s.reference_text for s in samples],
+        )
+        voice_prompt, _ = await tts_model.create_voice_prompt(combined_audio_path, combined_text)
+
+    return voice_prompt
+```
+
+## 音频校验
+
+- **时长：** 建议 3–30 秒
+- **格式：** 支持 WAV、MP3、FLAC、OGG、M4A
+- **采样率：** 引擎相关——音频工具在用时重采样到当前引擎期望的值（Whisper 16 kHz，多数 TTS 引擎 24 kHz，LuxTTS 输出 48 kHz）；存储的样本保留原始采样率
+- **声道：** 立体声会转成单声道
+
+## 导出与导入
+
+配置文件可导出为 ZIP 供分享：
+
+```text title="导出结构"
+profile_export.zip
+├── profile.json
+└── samples/
+    ├── sample_1.wav
+    └── sample_1.json
+```
+
+## API 端点
+
+| 方法 | 端点 | 说明 |
+| --- | --- | --- |
+| GET | `/profiles` | 列出全部配置文件 |
+| POST | `/profiles` | 创建配置文件 |
+| GET | `/profiles/{id}` | 按 ID 取配置文件 |
+| PUT | `/profiles/{id}` | 更新配置文件 |
+| DELETE | `/profiles/{id}` | 删除配置文件 |
+| GET | `/profiles/{id}/samples` | 取样本列表 |
+| POST | `/profiles/{id}/samples` | 添加样本 |
+| PUT | `/profiles/samples/{id}` | 更新样本文本 |
+| DELETE | `/profiles/samples/{id}` | 删除样本 |
+| GET | `/profiles/{id}/export` | 导出为 ZIP |
+| POST | `/profiles/import` | 从 ZIP 导入 |
+
+## 实践建议
+
+- **样本质量：** 用干净、背景噪声极少的音频，参考文本要与实际说的内容完全一致，3–5 个样本能明显提升克隆质量。
+- **语言匹配：** 配置文件语言要和参考音频一致。支持 `en`、`zh`、`ja`、`ko`、`de`、`fr`、`ru`、`pt`、`es`、`it`。
+- **命名：** 用能识别声音的描述性名字，避免会在文件系统上出问题的特殊字符。
+
+克隆细节见[声音克隆](/docs/guide/voice-cloning)，克隆引擎的接口见 [TTS 引擎](/docs/developer/tts-engines)。

@@ -1,0 +1,143 @@
+---
+title: 快速开始
+description: 从创建声音配置文件到生成第一段语音，再到多轨故事编辑的完整路径。
+sidebar:
+  order: 2
+---
+
+这一页按最短路径走一遍：创建一个声音配置文件，用它生成第一段语音，最后了解多轨故事编辑器的用法。全程大约五分钟。
+
+## 前置条件
+
+先完成[安装](/docs/getting-started/installation)并启动应用。左下角的状态指示灯应为绿色，表示本地后端已经就绪。
+
+## 第 1 步：创建声音配置文件
+
+声音配置文件是 Voicebox 的基本单位。每个配置文件里存放若干样本，AI 用这些样本来克隆音色。
+
+<Steps>
+  <Step title="打开 Profiles">
+    点击侧边栏的 **Profiles** 标签页。
+  </Step>
+  <Step title="新建声音配置文件">
+    点击 **+ New Profile**，填写以下字段：
+
+    - **Name**：能区分身份的命名，例如 `John Smith`
+    - **Language**：选择主要语言
+    - **Description**：可选备注
+  </Step>
+  <Step title="添加样本">
+    有两种方式：
+
+    **方式 A：上传音频**
+    - 点击 **Upload Sample**
+    - 选择 WAV、MP3 或 M4A 文件
+    - 理想长度为 10-30 秒的清晰语音
+
+    **方式 B：现场录制**
+    - 点击 **Record Sample**
+    - 清晰朗读 10-30 秒
+    - 结束后停止录制
+  </Step>
+  <Step title="保存配置文件">
+    点击 **Create Profile** 保存。
+  </Step>
+</Steps>
+
+<Aside type="tip">
+  样本越干净效果越好：背景噪声小、音量稳定、语气一致。同一说话人的多段样本能进一步提升克隆质量。
+</Aside>
+
+## 第 2 步：生成语音
+
+现在用刚创建的声音配置文件生成语音。
+
+<Steps>
+  <Step title="打开 Generate">
+    点击侧边栏的 **Generate** 标签页。
+  </Step>
+  <Step title="选择声音配置文件">
+    在下拉框里选择刚创建的配置文件。
+  </Step>
+  <Step title="输入文本">
+    输入或粘贴要合成的文字：
+
+    ```text
+    Hello! This is my first voice generation with Voicebox.
+    ```
+
+    部分引擎支持 `[laugh]`、`[sigh]`、`[gasp]` 这类副语言标签。
+
+    <Aside type="note" title="标签只在 Chatterbox Turbo 生效">
+      这些标签只在 **Chatterbox Turbo** 上会转成实际的声音表现。Qwen3-TTS、LuxTTS、Chatterbox Multilingual 与 HumeAI TADA 会把标签当普通文本读出来。
+    </Aside>
+
+    需要插入受支持的标签时，选中 **Chatterbox Turbo**，在文本框里输入 `/` 打开标签选择器。
+  </Step>
+  <Step title="生成">
+    点击 **Generate**，等待几秒。
+
+    <Aside type="note">
+      首次生成要初始化模型，耗时更长；之后的生成会快很多。
+    </Aside>
+  </Step>
+  <Step title="试听与下载">
+    - **Play**：试听生成结果
+    - **Download**：保存音频文件
+    - 生成结果同时写入 **History**
+  </Step>
+</Steps>
+
+## 第 3 步：拼接故事（可选）
+
+**Stories** 编辑器用时间线界面组织多角色叙述。
+
+<Steps>
+  <Step title="新建故事">
+    进入 **Stories**，点击 **+ New Story**。
+  </Step>
+  <Step title="添加轨道">
+    点击 **+ Add Track**，为每个说话人建立一条轨道。
+  </Step>
+  <Step title="放入音频片段">
+    - 从 **History** 把已生成的音频拖进来
+    - 也可以直接在时间线上生成新片段
+    - 在时间线上排列片段位置
+  </Step>
+  <Step title="编辑与导出">
+    - 拖动片段边缘裁剪
+    - 调整时间与间隔
+    - 点击 **Export** 渲染最终音频
+  </Step>
+</Steps>
+
+## 接下来
+
+| 主题 | 说明 |
+| --- | --- |
+| [声音克隆](/docs/guide/voice-cloning) | 提升克隆质量的具体做法 |
+| [故事编辑器](/docs/guide/stories) | 多轨时间线的完整用法 |
+| [远程模式](/docs/getting-started/remote-mode) | 把后端放到 GPU 机器上运行 |
+| [API](/docs/api/) | 在自己的程序里调用 Voicebox |
+
+## 实用建议
+
+### 提升音质
+
+- 使用 10-30 秒清晰、语气一致的语音
+- 避免背景噪声与混响
+- 同一说话人的多段样本效果更好
+- 样本的语气尽量贴近你想生成的语气
+
+### 提升生成速度
+
+- 使用支持 CUDA 的显卡，速度通常快 5-10 倍
+- 对重复生成的内容启用声音提示缓存（voice prompt）
+- 把后端放到远程 GPU 服务器上运行，见[远程模式](/docs/getting-started/remote-mode)
+
+### 常见故障
+
+- **服务起不来**：检查 17493 端口是否被占用
+- **音质差**：尝试增加更多样本
+- **生成慢**：确认 GPU 加速已经启用
+- 更多问题见[故障排查](/docs/getting-started/troubleshooting)

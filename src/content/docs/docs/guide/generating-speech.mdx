@@ -1,0 +1,81 @@
+---
+title: 生成语音
+description: 输入文本、选择声音配置文件，生成并导出可用的语音音频。
+sidebar:
+  order: 4
+---
+
+配置文件准备好之后，生成语音就是从文本到音频的最后一环。你可以在浮动生成框里快速试一句，也可以在 Generate 页面里处理整段稿子。
+
+## 基本生成
+
+<Steps>
+  <Step title="选择配置文件">
+    在下拉框里选一个声音配置文件。每个声音配置文件绑定一个引擎；切到别的引擎时，不适用的配置文件会被置灰。
+  </Step>
+  <Step title="输入文本">
+    输入或粘贴要朗读的文本。
+  </Step>
+  <Step title="生成">
+    点击 **Generate**，等几秒。
+  </Step>
+  <Step title="试听与导出">
+    先试听结果，满意后再下载。
+  </Step>
+</Steps>
+
+## 文本排版建议
+
+文本怎么排版会直接影响输出质量。
+
+### 标点
+
+用规范的标点，模型才能判断自然的停顿：
+
+```text title="标点示例"
+推荐："Hello! How are you today? I'm doing great."
+不推荐："Hello how are you today Im doing great"
+```
+
+- 句末的句号、问号、感叹号是停顿和语调的主要依据
+- 逗号控制句中的短停顿
+- 省略号会让语速变慢、语气变弱
+
+### 强调
+
+可以用排版暗示重音：
+
+| 写法 | 效果 | 示例 |
+| --- | --- | --- |
+| 全大写 | 更响、更强调 | `That was AMAZING!` |
+| 斜体 | 轻微强调 | `I *really* enjoyed that` |
+| 粗体 | 强强调 | `This is **very** important` |
+
+<Aside type="note">
+模型会参考这些提示，但效果因引擎而异，不保证稳定复现。
+</Aside>
+
+## 进阶功能
+
+### 批量生成
+
+长文本建议拆成较小的分块再逐段生成，这样更好控制，处理也更快。分块时尽量在句号或段落边界切开，避免把一句话从中间断开，否则语调会在断点处变形。
+
+### 声音缓存
+
+Voicebox 会缓存声音提示（voice prompt）。同一个配置文件反复生成时不必每次都重新分析样本，第二次之后通常更快。
+
+## 即将推出
+
+- 实时流式输出
+- 词级时间对齐控制
+- 更细粒度的情绪与风格控制（目前可用 Qwen CustomVoice 的表达指令）
+- SSML 支持
+
+## 下一步
+
+<CardGrid>
+  <Card title="生成历史" href="/docs/guide/generation-history">查看、重生成与导出历史音频。</Card>
+  <Card title="预设音色" href="/docs/guide/preset-voices">换一个不用录音的现成音色。</Card>
+  <Card title="故事编辑器" href="/docs/guide/stories">把生成结果排进多轨时间线。</Card>
+</CardGrid>

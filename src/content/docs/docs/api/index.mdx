@@ -1,0 +1,40 @@
+---
+title: API 参考
+description: Voicebox 本地 REST API 与 MCP 工具。
+sidebar:
+  group:
+    label: "API"
+  order: 4
+---
+
+桌面应用启动后，后端会监听 `127.0.0.1:17493`。所有接口都是普通的 HTTP + JSON，没有鉴权，只对本机开放。
+
+| 项目 | 值 |
+| --- | --- |
+| 基础 URL | `http://127.0.0.1:17493` |
+| 交互式文档 | `http://127.0.0.1:17493/docs` |
+| OpenAPI 规范 | `http://127.0.0.1:17493/openapi.json` |
+| MCP 端点 | `http://127.0.0.1:17493/mcp`（Streamable HTTP） |
+
+<Aside type="warning" title="仅限本机">
+  接口没有认证，默认只绑定回环地址。如果要通过远程模式暴露到局域网，请自行加一层带鉴权的反向代理。
+</Aside>
+
+## 分组
+
+<CardGrid>
+  <Card title="语音生成" href="/docs/api/generation">`POST /generate`、`GET /audio/{id}`、`POST /transcribe`、`POST /speak`。</Card>
+  <Card title="声音配置文件" href="/docs/api/profiles">增删改查与样本上传。</Card>
+  <Card title="历史" href="/docs/api/history">生成记录、详情、删除与统计。</Card>
+  <Card title="模型" href="/docs/api/models">状态、下载、加载与卸载。</Card>
+</CardGrid>
+
+## 最小示例
+
+```bash title="生成并下载一段语音"
+curl -X POST http://127.0.0.1:17493/generate \
+  -H "Content-Type: application/json" \
+  -d '{"text": "你好，欢迎使用 Voicebox", "profile_id": "abc123"}'
+```
+
+响应里的 `audio_url` 指向 `GET /audio/{generation_id}`，可以直接播放或下载。

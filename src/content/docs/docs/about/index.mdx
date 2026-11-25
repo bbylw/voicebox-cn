@@ -1,0 +1,45 @@
+---
+title: 关于项目
+description: Voicebox 的来历、许可证、链接与致谢。
+sidebar:
+  group:
+    label: 关于
+  order: 5
+---
+
+Voicebox 是一个本地优先的开源 AI 语音工作室，由 [Jamie Pine](https://github.com/jamiepine) 发起。它把语音输出（克隆、生成、故事、人格）和语音输入（听写、转录、Captures）放进同一个桌面应用，并且默认不把音频或文本发到任何服务器。
+
+本中文站（`bbylw/voicebox-cn`）是社区维护的简体中文文档与落地页，内容跟随上游 `jamiepine/voicebox` 更新，与上游项目没有隶属关系。发现翻译问题欢迎在[本站仓库](https://github.com/bbylw/voicebox-cn/issues)提 issue。
+
+## 许可证
+
+Voicebox 采用 **MIT License** 发布，详见上游仓库的 [LICENSE](https://github.com/jamiepine/voicebox/blob/main/LICENSE)。
+
+## 链接
+
+- 官方网站：[voicebox.sh](https://voicebox.sh)
+- 上游仓库：[github.com/jamiepine/voicebox](https://github.com/jamiepine/voicebox)
+- 英文文档：[docs.voicebox.sh](https://docs.voicebox.sh)
+- 本站仓库：[github.com/bbylw/voicebox-cn](https://github.com/bbylw/voicebox-cn)
+- 下载页面：[voicebox.sh/download](https://voicebox.sh/download)
+- 本机 API 文档：`http://127.0.0.1:17493/docs`
+- 工程状态：[docs/PROJECT_STATUS.md](https://github.com/jamiepine/voicebox/blob/main/docs/PROJECT_STATUS.md)
+
+## 致谢
+
+Voicebox 站在许多开源项目之上，包括但不限于：
+
+- Qwen3-TTS / Qwen CustomVoice / Qwen VoiceDesign（阿里巴巴）
+- Chatterbox TTS（Resemble AI）
+- LuxTTS
+- TADA（Hume AI）
+- Kokoro
+- Qwen3 本地 LLM（阿里巴巴）
+- Whisper（OpenAI）
+- Pedalboard（Spotify）
+- Tauri
+- FastAPI
+
+## 本站的技术栈
+
+落地页与文档站使用 [Astro](https://astro.build/) + [Nimbus](https://nimbus-docs.com/) 构建，依赖安装与构建由 [Bun](https://bun.com) 驱动，部署在 GitHub Pages。文档同时输出 `/llms.txt` 与每页的 Markdown 版本，方便智能体直接读取。

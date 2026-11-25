@@ -1,0 +1,173 @@
+---
+title: 构建与打包
+description: Python 服务打包、Tauri 安装包组装与 CI 发布矩阵。
+sidebar:
+  order: 13
+---
+
+Voicebox 的发布采用两段式构建：先把 FastAPI 后端打成独立可执行文件，再把它作为 sidecar 与 React 前端、Rust 外壳一起装进 Tauri 安装包。CUDA 版后端体积太大，单独构建、单独分发。
+
+## 构建命令
+
+```bash title="终端"
+just build          # 服务端 + Tauri 全量构建
+just build-server   # 只构建 Python 服务端二进制
+just build-tauri    # 只构建 Tauri 应用
+```
+
+## 服务端二进制
+
+`scripts/build-server.sh` 负责编排：
+
+```bash title="scripts/build-server.sh"
+# 确定平台三元组（如 x86_64-apple-darwin）
+PLATFORM=$(rustc --print host-tuple)
+
+# 通过 build_binary.py 调用 PyInstaller
+cd backend
+python build_binary.py
+
+# 复制到 Tauri 的 binaries 目录
+cp dist/voicebox-server ../tauri/src-tauri/binaries/voicebox-server-${PLATFORM}
+```
+
+### PyInstaller 配置
+
+配置在 `backend/build_binary.py`。入口是 **`server.py`** 而不是 `main.py`，因为只有它支持 Tauri sidecar 的启动与看门狗协议。
+
+| 选项 | 作用 |
+| --- | --- |
+| `--onefile` | 产出单个可执行文件 |
+| `--hidden-import` | 显式带上 PyInstaller 静态分析不到的模块 |
+| `--collect-all` | 打包数据文件与原生库，如 `mlx`、`zipvoice` |
+| `--exclude-module` | 从 CPU 构建里剔除 NVIDIA 包 |
+
+平台相关逻辑：
+
+```python title="backend/build_binary.py"
+# Apple Silicon —— 带上 MLX 后端
+if is_apple_silicon() and not cuda:
+    args.extend([
+        "--hidden-import", "mlx",
+        "--collect-all", "mlx",        # 打包 .dylib 与 .metallib
+    ])
+
+# CUDA 构建 —— 带上 torch.cuda
+if cuda:
+    args.extend(["--hidden-import", "torch.cuda"])
+
+# CPU 构建 —— 排除 NVIDIA 包，省下约 3 GB
+else:
+    for pkg in ["nvidia", "nvidia.cublas", "nvidia.cudnn"]:
+        args.extend(["--exclude-module", pkg])
+```
+
+用本地 Qwen3-TTS 源码调试时可以指定路径：
+
+```bash title="终端"
+export QWEN_TTS_PATH=~/path/to/Qwen3-TTS
+```
+
+### CUDA 二进制
+
+CUDA 版体积约 2.43 GB（CPU 版约 410 MB），因此单独构建：
+
+```bash title="终端"
+cd backend
+python build_binary.py --cuda
+```
+
+产物太大，GitHub Releases 单文件放不下，所以拆成 server core 与 CUDA libs 两个归档分发，下载机制见[自动更新](/docs/developer/autoupdater)。
+
+## Tauri 安装包
+
+```bash title="终端"
+cd tauri
+bun run tauri build
+```
+
+这一步会：
+
+1. 用 Vite 构建 React 前端
+2. 编译 Rust 外壳
+3. 从 `src-tauri/binaries/` 复制 sidecar 二进制
+4. 生成平台安装包（DMG、MSI、AppImage）
+
+产物位置：
+
+```text title="tauri/src-tauri/target/release/bundle"
+bundle/
+├── dmg/
+├── msi/
+├── nsis/
+└── appimage/
+```
+
+### sidecar 声明
+
+```json
+{
+  "tauri": {
+    "bundle": {
+      "externalBin": ["binaries/voicebox-server"]
+    }
+  }
+}
+```
+
+Tauri 会到 `src-tauri/binaries/` 找 `voicebox-server-${PLATFORM}` 并打进包里。
+
+## CI 发布
+
+`.github/workflows/release.yml` 自动化整个流程。
+
+### 构建矩阵
+
+| 平台 | 目标三元组 | 后端 | 说明 |
+| --- | --- | --- | --- |
+| macos-latest | `aarch64-apple-darwin` | MLX | Apple Silicon 原生 |
+| macos-15-intel | `x86_64-apple-darwin` | PyTorch | Intel Mac |
+| windows-latest | `x86_64-pc-windows-msvc` | PyTorch | Windows，CUDA 可选 |
+
+### 构建步骤
+
+1. **准备** — Python、Rust、Bun 与依赖
+2. **构建服务端** — Unix 用 `build-server.sh`，Windows 用 `build_binary.py`
+3. **构建 Tauri** — `tauri-action` 带上签名密钥
+4. **上传** — 发布产物与 `latest.json`
+
+### 代码签名
+
+- **macOS：** 从 secrets 导入 Apple Developer 证书，通过 App Store Connect API 做公证
+- **Windows：** 由 Tauri 用 `TAURI_SIGNING_PRIVATE_KEY` 签名
+
+### GPU 构建任务
+
+`build-cuda-windows` 任务独立运行：
+
+1. 安装 CUDA 12.8 版 PyTorch
+2. 用 `build_binary.py --cuda` 构建（`--onedir` 输出）
+3. 用 `scripts/package_cuda.py` 打成两个归档：`voicebox-server-cuda-windows-x86_64.tar.gz`（服务核心，约 945 MB）与 `cuda-libs-windows-x86_64-cu128-v1.tar.gz`（NVIDIA 运行库，约 1.7 GB，独立缓存）
+4. 上传为 Release 产物
+
+`build-gpu-linux` 矩阵任务在 `ubuntu-latest` 上做同样的事，覆盖 CUDA（cu128）与 ROCm（PyTorch rocm7.2 索引），产出 `voicebox-server-{cuda,rocm}-linux-x86_64.tar.gz` 与 `{cuda,rocm}-libs-linux-x86_64-<version>.tar.gz`。
+
+这些二进制只在用户于设置里启用 CUDA 时按需下载；CUDA libs 只在工具链版本变化时重新下载，不随每次应用更新重下。
+
+## 排查
+
+### `dist/` 里没有二进制
+
+PyInstaller 没跑出结果。检查虚拟环境是否激活、`pip install -r requirements.txt` 是否装全、`pip install pyinstaller` 是否已安装。
+
+### 打包里缺 MLX / Metal 库
+
+macOS Apple Silicon 必须用 `--collect-all mlx`，只加 `--collect-data` 拿不到 `.dylib` 与 `.metallib`。
+
+### CPU 构建混入 CUDA DLL
+
+本机装了 CUDA 版 torch 却在构建 CPU 版时，脚本会自动临时换成 CPU 版 torch，构建完恢复。
+
+### Tauri 找不到 sidecar
+
+确认 `tauri/src-tauri/binaries/voicebox-server-${PLATFORM}` 已经存在，再跑 Tauri 构建。

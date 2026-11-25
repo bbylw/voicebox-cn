@@ -1,0 +1,222 @@
+---
+title: GPU 加速
+description: Voicebox 如何选择后端、各平台可用的加速方式，以及后端异常时的处理。
+sidebar:
+  order: 4
+---
+
+首次启动时，Voicebox 会检测可用的加速器，并选用它能用的最快后端。多数情况下这已经足够，打开应用就落在正确的后端上。
+
+这一页处理例外情况：
+
+- 有显卡，但 Voicebox 跑在 CPU 上
+- 换了显卡（尤其是 RTX 50 系列 / Blackwell）之后生成失败
+- 想手动切换后端，例如在 Apple Silicon 上强制使用 MLX 而不是 PyTorch
+- 在 Settings 里看到显卡旁边标着 `[UNSUPPORTED - see logs]`
+
+## 后端对照表
+
+| 平台 | 自动选择的后端 | 说明 |
+| --- | --- | --- |
+| **macOS Apple Silicon** | MLX (Metal) | 通过 Metal GPU 运行，比 PyTorch 快 4-5 倍 |
+| **macOS Intel** | PyTorch CPU | 无 GPU 加速可用；仅支持 PyTorch ≥ 2.2 |
+| **Windows + NVIDIA** | PyTorch CUDA (cu128) | 首次使用时自动下载 CUDA 后端二进制 |
+| **Windows + Intel Arc** | PyTorch XPU (IPEX) | 0.4 新增，支持 Arc A 系列与 B 系列 |
+| **Windows 通用 GPU** | DirectML | Windows 上的通用 GPU 支持，比 CUDA 慢 |
+| **Linux + NVIDIA** | PyTorch CUDA (cu128) | 需搭配 CUDA 版 PyTorch 的本地或远程 Python 后端 |
+| **Linux + AMD** | PyTorch ROCm | 自动配置 `HSA_OVERRIDE_GFX_VERSION` |
+| **Linux + Intel Arc** | PyTorch XPU (IPEX) | 与其他平台的 XPU 路径一致 |
+| **任意平台（无 GPU）** | PyTorch CPU | 到处可用；比 GPU 慢 5-10 倍，长文本与大模型更明显 |
+
+检测到的后端显示在 **Settings → GPU**。启动日志里也会打印所选后端与设备名。
+
+## Apple Silicon：MLX 与 PyTorch
+
+在 M 系列 Mac 上，Voicebox 提供针对 MLX 优化的后端，通过 Metal GPU 运行。对受支持的引擎，它比 PyTorch（CPU/Metal）路径**快 4-5 倍**。
+
+| 引擎 | MLX 支持 | 说明 |
+| --- | --- | --- |
+| Qwen3-TTS | 原生 | 可用时只走 MLX |
+| Chatterbox / Turbo | PyTorch MPS | 通过 PyTorch 回落到 Metal |
+| LuxTTS | PyTorch MPS | — |
+| TADA | PyTorch MPS | — |
+| Kokoro | PyTorch MPS | 需要设置 `PYTORCH_ENABLE_MPS_FALLBACK=1` |
+| Qwen CustomVoice | PyTorch MPS | — |
+| Whisper（转录） | 原生 | Apple Silicon 上默认使用 MLX-Whisper |
+
+Whisper Turbo 与 MLX 组合后，M 系列芯片上的转录延迟从约 20 秒降到约 2-3 秒（见 v0.1.10 的 CHANGELOG 条目）。
+
+## Windows + NVIDIA：CUDA 后端的分体下载
+
+Voicebox 不把 CUDA 塞进主安装包，否则对没有 NVIDIA 显卡的用户来说，下载体积会膨胀到数 GB。改为在首次需要时单独下载一个包含 PyTorch 与 CUDA 运行时的 **CUDA 后端二进制**。
+
+<Steps>
+  <Step title="打开 Settings → GPU">
+    检测到 NVIDIA 显卡时，GPU 面板里会出现 **Install CUDA backend**。
+  </Step>
+  <Step title="点击 Install">
+    应用会分两次下载归档：
+
+    - **Server core**（约 200-400 MB）：随每次 Voicebox 版本更新
+    - **CUDA libs**（约 4 GB）：体量最大的 PyTorch 与 CUDA 动态库，独立维护版本
+  </Step>
+  <Step title="重启">
+    Voicebox 会重启并切换到 CUDA 后端。
+  </Step>
+</Steps>
+
+<Aside type="note">
+  分体归档（v0.4 引入）意味着大多数 Voicebox 升级只需重新下载体积较小的 server-core。4 GB 的 libs 归档只在底层 CUDA 工具链或 torch 主版本变化时才需要更新。
+</Aside>
+
+### 自动更新
+
+新版本发布后，GPU 面板会检查内置的 server-core 是否匹配已安装的 CUDA 版本。若只有 core 变化（常见情况），后台会自动拉取；若 libs 版本也变了（较少见，只在 cu126 → cu128 这类主版本跃迁时发生），会先提示你确认这次较大的下载。
+
+## RTX 50 系列 / Blackwell
+
+Voicebox 0.4 加入了 RTX 50 系列的显式支持：
+
+- CUDA 工具链升级到 **cu128**（更早的版本使用 cu126，缺少 Blackwell 内核）
+- 构建时固定 `TORCH_CUDA_ARCH_LIST=...12.0+PTX`，保证向前兼容
+
+如果你用的是 RTX 5070 / 5080 / 5090，并遇到 `no kernel image is available` 错误：
+
+1. 确认 Voicebox 为 **≥ 0.4.0**（Settings → About）。
+2. 重装 CUDA 后端（Settings → GPU → Reinstall CUDA backend），旧安装可能残留 cu126 的库。
+3. 仍然报错时，见下面的 GPU 兼容性警告。
+
+## Intel Arc（XPU）
+
+0.4 新增，支持 Arc A 系列（Alchemist：A380、A580、A750、A770）与 B 系列（Battlemage）。
+
+Voicebox 会自动识别 Arc 显卡，并走 Intel 的 PyTorch XPU 后端（基于 IPEX，即 Intel Extension for PyTorch）。除正常安装外不需要额外步骤。
+
+确认它确实生效：
+
+- Settings → GPU 应显示 **XPU** 加显卡型号，例如 `XPU (Intel Arc A770)`
+- 启动日志会打印 `Backend: PYTORCH` 与 `GPU: XPU (Intel Arc ...)`
+
+所有基于 PyTorch 的引擎都能在 XPU 上运行。性能一般介于 CPU 与 CUDA 之间，较大的模型大约比 CPU 快 2-3 倍。
+
+## DirectML
+
+面向使用非 NVIDIA、非 Intel Arc 显卡的 Windows 用户（较老的 AMD 独显、核显等）的兜底方案。比 CUDA 与 XPU 慢，但相对 CPU 仍有加速。
+
+没有其他 GPU 后端可用时会被自动选中。
+
+## AMD ROCm（Linux）
+
+ROCm 为 AMD 独显提供 PyTorch GPU 加速。对需要覆盖的常见型号，Voicebox 会自动配置 `HSA_OVERRIDE_GFX_VERSION`。
+
+```bash title="终端"
+# 在终端中检查
+echo $HSA_OVERRIDE_GFX_VERSION
+# RX 6000 系列应显示 10.3.0 之类的值
+```
+
+检测失败时，在启动 Voicebox 前手动设置：
+
+```bash
+export HSA_OVERRIDE_GFX_VERSION=10.3.0
+voicebox
+```
+
+常见取值：
+
+- `10.3.0`：RX 6000 系列（RDNA 2）
+- `11.0.0`：RX 7000 系列（RDNA 3）
+- `9.0.0`：较老的 Vega 系列
+
+## GPU 兼容性警告
+
+Voicebox 0.4 增加了运行时检查：把显卡的计算能力与内置 PyTorch 编译时覆盖的架构做比对，不匹配时会出现三种信号：
+
+- 启动日志：`WARNING: GPU COMPATIBILITY: <your GPU> is not supported by this PyTorch build...`
+- Settings 里的显卡标签显示 `[UNSUPPORTED - see logs]`
+- `/health` API 的 `gpu_compatibility_warning` 字段被填充
+
+最常见的触发原因是全新的显卡架构，而预编译的 PyTorch wheel 还没原生覆盖。按优先级处理：
+
+1. **升级 Voicebox**：新版本附带更新的 PyTorch，架构覆盖更广。
+2. **重装 CUDA 后端**：Settings → GPU → Reinstall CUDA backend。
+3. **比当前 Blackwell 更新的显卡**：手动安装 PyTorch nightly：
+   ```bash
+   pip install torch --index-url https://download.pytorch.org/whl/nightly/cu128 --force-reinstall
+   ```
+   然后在稳定版 PyTorch 跟上之前，通过[远程模式](/docs/getting-started/remote-mode)让 Voicebox 指向该环境。
+4. **临时退回 CPU**：启动前设置 `VOICEBOX_FORCE_CPU=1`。
+
+## 纯 CPU 兜底
+
+没有可用 GPU（或你主动关掉了）时，Voicebox 使用 PyTorch CPU 后端。预期表现：
+
+- 生成慢 5-10 倍，长文本与大模型更明显
+- 生成期间 CPU 占用很高
+- 各引擎在 CPU 上的表现差别明显：
+  - **Kokoro 82M**：在现代 CPU 上可达实时
+  - **LuxTTS**：在 CPU 上超过 150 倍实时
+  - **Chatterbox Turbo (350M)**：可用，但慢
+  - 更大的模型（Qwen 1.7B、Chatterbox Multilingual、TADA 3B）：很吃力
+
+只能用 CPU 时，优先选更小更轻的引擎。
+
+## 验证当前后端
+
+三个地方可以确认实际生效的后端：
+
+<Steps>
+  <Step title="Settings → GPU">
+    显示检测到的后端、显卡型号与显存（适用时）。注意是否有 `[UNSUPPORTED - see logs]` 后缀。
+  </Step>
+  <Step title="Settings → Logs">
+    **Server logs** 标签页里有启动横幅，包含 `Backend: <type>` 与 `GPU: <name>`。
+  </Step>
+  <Step title="健康检查端点">
+    `curl http://127.0.0.1:17493/health` 返回的 JSON 里有 `backend_type`、`backend_variant`，以及适用时的 `gpu_compatibility_warning`。
+  </Step>
+</Steps>
+
+## 故障排查
+
+### Settings 显示 CPU 而不是我的显卡
+
+- NVIDIA：安装 CUDA 后端（Settings → GPU）
+- Intel Arc：在启动日志里确认 IPEX 检测成功；更新驱动后重启应用
+- AMD Linux：确认 `HSA_OVERRIDE_GFX_VERSION` 已设置
+
+### 报 `no kernel image is available` 或 `CUDA error`
+
+基本都意味着内置 PyTorch 没有覆盖你的显卡计算能力。
+
+1. 升级到 Voicebox ≥ 0.4.0（Blackwell 支持在该版本加入）
+2. 重装 CUDA 后端
+3. 仍然不行时，手动安装 PyTorch nightly，再用[远程模式](/docs/getting-started/remote-mode)让 Voicebox 指向该环境
+
+### 显存不足（CUDA）
+
+- 换更小的模型尺寸，例如用 Qwen3 0.6B 代替 1.7B
+- 在 Settings → Models 里卸载暂时不用的引擎
+- CPU 侧已默认开启 `low_cpu_mem_usage`；CUDA 侧由引擎的 `device_map` 自动处理卸载
+- 关闭其他占用 GPU 的程序
+
+### macOS 上的 MPS 回落报错
+
+部分算子没有 Metal 实现。Voicebox 会为需要的引擎（尤其是 Kokoro）设置 `PYTORCH_ENABLE_MPS_FALLBACK=1`；如果你从自定义环境启动，需要手动设置：
+
+```bash
+export PYTORCH_ENABLE_MPS_FALLBACK=1
+```
+
+### 有显卡但生成仍然很慢
+
+- 确认 Settings → GPU 显示的是你的显卡而不是 CPU
+- 查看显存占用，可能正在往系统内存换页
+- 换更小的模型
+- NVIDIA：确认装的是 cu128（Settings → GPU → version）
+
+## 下一步
+
+- [远程模式](/docs/getting-started/remote-mode)：把后端放到显卡更强的机器上
+- [模型管理](/docs/developer/model-management)：卸载模型以释放显存
+- [故障排查](/docs/getting-started/troubleshooting)：GPU 之外的常见问题

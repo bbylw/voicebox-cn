@@ -1,0 +1,153 @@
+---
+title: 远程模式
+description: 把 Voicebox 后端放到另一台 GPU 机器上运行，本地只保留桌面界面。
+sidebar:
+  order: 5
+---
+
+远程模式让 Voicebox 的后端跑在另一台机器上，例如一台 GPU 服务器，本地只负责桌面界面。界面照常操作，重活都在远端完成。
+
+## 适用场景
+
+- **本地没有显卡**：使用云 GPU 或远程工作站
+- **生成更快**：借用远端更强的硬件
+- **共享基础设施**：多个用户连到同一台服务器
+- **笔记本工作流**：让笔记本保持低温、省电
+
+## 架构
+
+远程模式下，本地机器上的 Voicebox 桌面应用通过 HTTP 与远端机器上的后端服务通信。本地应用只提供用户界面；TTS 模型、音频生成与 API 端点都由远端服务器提供。
+
+## 配置远程模式
+
+### 服务端
+
+<Steps>
+  <Step title="安装依赖">
+    ```bash title="终端"
+    # 克隆仓库
+    git clone https://github.com/jamiepine/voicebox.git
+    cd voicebox/backend
+
+    # 安装 Python 依赖
+    pip install -r requirements.txt
+
+    # 会与主依赖发生传递依赖冲突的引擎，改用 --no-deps 安装
+    pip install --no-deps chatterbox-tts
+    pip install --no-deps hume-tada
+
+    # Qwen3-TTS 从源码安装
+    pip install git+https://github.com/QwenLM/Qwen3-TTS.git
+    ```
+
+    也可以在仓库根目录执行 `just setup`，它会把这些步骤串起来。
+  </Step>
+  <Step title="启动服务">
+    ```bash title="终端"
+    # 允许外部连接
+    uvicorn main:app --host 0.0.0.0 --port 17493
+    ```
+
+    <Aside type="caution">
+      这样会把服务暴露到网络上。请配合防火墙或 VPN 使用。
+    </Aside>
+  </Step>
+  <Step title="开放防火墙">
+    ```bash title="终端"
+    # Ubuntu/Debian
+    sudo ufw allow 17493
+
+    # 或者使用云厂商的防火墙设置
+    ```
+  </Step>
+</Steps>
+
+### 客户端
+
+<Steps>
+  <Step title="打开 Settings">
+    在 Voicebox 里进入 **Settings → Server**。
+  </Step>
+  <Step title="启用远程模式">
+    打开 **Remote Mode** 开关。
+  </Step>
+  <Step title="填写服务器地址">
+    ```text
+    http://<server-ip>:17493
+    ```
+
+    把 `<server-ip>` 换成服务器的实际 IP。
+  </Step>
+  <Step title="测试连接">
+    点击 **Test Connection** 验证。
+  </Step>
+</Steps>
+
+## 云端部署
+
+### AWS EC2
+
+```bash title="终端"
+# 1. 启动一台 GPU 实例（例如 g4dn.xlarge，带 NVIDIA T4），安全组放行 22 与 17493
+# 2. SSH 登录后克隆仓库并安装依赖
+git clone https://github.com/jamiepine/voicebox.git
+cd voicebox/backend
+pip install -r requirements.txt
+
+# 3. 监听所有网卡启动
+uvicorn main:app --host 0.0.0.0 --port 17493
+```
+
+### Vast.ai
+
+```bash title="终端"
+# 1. 在 Vast.ai 租一台带 CUDA 的实例，模板选 PyTorch，开放 17493 端口
+# 2. 用页面给出的 SSH 命令登录，然后
+git clone https://github.com/jamiepine/voicebox.git
+cd voicebox/backend
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 17493
+```
+
+### RunPod
+
+```bash title="终端"
+# 1. 新建一个 CUDA 模板的 Pod，暴露 HTTP 端口 17493
+# 2. 在 Pod 的终端里执行
+git clone https://github.com/jamiepine/voicebox.git
+cd voicebox/backend
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 17493
+```
+
+## 安全
+
+<Aside type="caution">
+  API 目前没有身份验证。只在可信网络中使用，或接入 VPN。
+</Aside>
+
+建议做法：
+
+- 用 VPN（WireGuard、Tailscale）代替直接暴露到公网
+- 放在带身份验证的反向代理后面（nginx + basic auth）
+- 使用 HTTPS 与 SSL 证书
+- 用防火墙规则限制可访问的 IP
+
+## 性能
+
+不同显卡上的大致生成速度：
+
+| GPU | 生成速度 |
+| --- | --- |
+| RTX 4090 | 每 10 个词约 2-3 秒 |
+| RTX 3090 | 每 10 个词约 3-4 秒 |
+| RTX 3060 | 每 10 个词约 5-7 秒 |
+| CPU（12 核） | 每 10 个词约 20-30 秒 |
+
+<Aside type="note">
+  想要最佳性能，建议使用 8 GB 以上显存的显卡。
+</Aside>
+
+## 故障排查
+
+连不上服务器、端口不通等问题见[故障排查](/docs/getting-started/troubleshooting)的「远程模式问题」一节。若服务器本身还没跑起来，先确认 `curl http://<server-ip>:17493/health` 有返回。
