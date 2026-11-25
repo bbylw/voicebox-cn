@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Voicebox - 开源语音克隆工作室</title>
-    <meta name="description" content="开源语音克隆工作室，支持多种 TTS 引擎。克隆任意声音，生成自然语音，创作多声音项目——全部在本地运行。" />
+    <meta name="description" content="开源 AI 语音工作室。克隆任意声音、生成自然语音、全局听写进任何应用，并让 AI 智能体用你的声音说话——全部在本地运行。" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,400&display=swap" rel="stylesheet" />
@@ -240,10 +240,10 @@
         <div class="hero-glow"></div>
         <div class="hero-badge">
           <span style="color:var(--green);">●</span>
-          <span>v0.3.0</span>
+          <span>v0.6.0</span>
         </div>
         <h1>你的声音，你的机器。</h1>
-        <p class="hero-sub">开源语音克隆工作室，支持多种 TTS 引擎。克隆任意声音、生成自然语音、创作多声音项目——全部在本地运行。</p>
+        <p class="hero-sub">开源 AI 语音工作室，8 种 TTS 引擎。克隆任意声音、生成自然语音、全局听写进任何应用，并让智能体用你克隆的声音说话——完整的语音 I/O 链路，全部在本地运行。</p>
         <div class="hero-actions">
           <a href="#download" class="btn-primary">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
@@ -409,15 +409,43 @@
       <section id="features" class="section">
         <div class="fade-up">
           <p class="section-label">专业级语音工具，零妥协</p>
-          <h2 class="section-title">克隆声音、生成语音、制作多声音内容<br>全部在你的机器上运行。</h2>
+          <h2 class="section-title">克隆声音、生成语音、听写进任何应用<br>让智能体用你的声音说话。</h2>
         </div>
         <div class="features-grid">
           <div class="feature-card fade-up">
             <div class="feature-icon" style="background:var(--accent-dim);">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
             </div>
-            <h3>近乎完美的声音克隆</h3>
-            <p>多种 TTS 引擎提供卓越的语音质量。仅需几秒钟音频即可克隆任意声音，保留自然的语调和情感。</p>
+            <h3>声音克隆与预设音色</h3>
+            <p>8 种 TTS 引擎提供卓越的语音质量。几秒钟音频即可零样本克隆任意声音，也可以直接从 Kokoro 和 Qwen CustomVoice 挑选 50+ 预设音色，无需参考音频。</p>
+          </div>
+          <div class="feature-card fade-up">
+            <div class="feature-icon" style="background:var(--green-dim);">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></svg>
+            </div>
+            <h3>全局听写与语音输入</h3>
+            <p>在系统任何位置按住快捷键说话，松开即完成转录。macOS 上会经过辅助功能验证自动粘贴进聚焦的文本框，剪贴板原子保存与恢复，不会被打断。</p>
+          </div>
+          <div class="feature-card fade-up">
+            <div class="feature-icon" style="background:var(--cyan-dim);">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><path d="M8 16h.01"/><path d="M16 16h.01"/></svg>
+            </div>
+            <h3>智能体语音输出</h3>
+            <p>内置 MCP 服务器，一次工具调用就能让 Claude Code、Cursor、Cline 等智能体用你克隆的声音说话。听写和说话共用同一个屏幕悬浮胶囊，始终可见。</p>
+          </div>
+          <div class="feature-card fade-up">
+            <div class="feature-icon" style="background:rgba(244,63,94,.12);">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" stroke-width="2"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
+            </div>
+            <h3>声音人格</h3>
+            <p>为每个声音配置文件附加自由书写的人格。一键"撰写"让角色自己开口，或开启"以角色身份说话"，由内置本地 LLM 先把你的文字改写成这个角色的口吻再合成。</p>
+          </div>
+          <div class="feature-card fade-up">
+            <div class="feature-icon" style="background:var(--blue-dim);">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+            </div>
+            <h3>Captures 音频归档</h3>
+            <p>每次听写、录音和上传的音频都会进入 Captures，原始音频与转录文本成对保留。可回放、换 Whisper 规格重转录、用 LLM 重新润色，或直接以克隆声音播放。</p>
           </div>
           <div class="feature-card fade-up">
             <div class="feature-icon" style="background:var(--blue-dim);">
@@ -428,7 +456,7 @@
           </div>
           <div class="feature-card fade-up">
             <div class="feature-icon" style="background:var(--orange-dim);">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--orange)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--orange)" stroke-width="2"><line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/></svg>
             </div>
             <h3>音频效果管线</h3>
             <p>应用变调、混响、延迟、压缩等效果——保存为预设。实时预览效果并为每个声音配置文件设置默认值。</p>
@@ -439,13 +467,6 @@
             </div>
             <h3>本地或远程</h3>
             <p>使用 Metal、CUDA、ROCm、Intel Arc 或 DirectML 在本地运行推理——或连接远程机器。一键服务器设置加自动发现。</p>
-          </div>
-          <div class="feature-card fade-up">
-            <div class="feature-icon" style="background:var(--cyan-dim);">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="2"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4c0-1.1.9-2 2-2h8a2 2 0 0 1 2 2v5Z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg>
-            </div>
-            <h3>音频转录</h3>
-            <p>由 Whisper 提供准确的语音转文本。自动从语音样本中提取参考文本。</p>
           </div>
           <div class="feature-card fade-up">
             <div class="feature-icon" style="background:rgba(244,63,94,.12);">
@@ -464,7 +485,7 @@
         <div class="fade-up">
           <p class="section-label">声音克隆</p>
           <h2 class="section-title">秒级克隆任意声音</h2>
-          <p class="section-desc">三种捕获声音样本的方式。上传片段、使用麦克风录制、或捕获系统正在播放的音频。Voicebox 仅需 3 秒音频即可克隆声音。</p>
+          <p class="section-desc">三种捕获声音样本的方式。上传片段、使用麦克风录制、或捕获系统正在播放的音频。Voicebox 仅需 3 秒音频即可克隆声音；如果不想克隆，也可以直接使用 Kokoro 或 Qwen CustomVoice 的 50+ 预设音色。</p>
         </div>
         <div class="clone-methods">
           <div class="clone-card fade-up">
@@ -498,7 +519,7 @@
         <div class="fade-up">
           <p class="section-label">多引擎架构</p>
           <h2 class="section-title">为每项任务选择合适的模型</h2>
-          <p class="section-desc">所有模型均在本地硬件上运行——下载一次，永久使用。</p>
+          <p class="section-desc">8 种 TTS 引擎，全部在本地硬件上运行——下载一次，永久使用。</p>
         </div>
         <div class="engines-grid">
           <div class="engine-card fade-up">
@@ -509,10 +530,36 @@
               </div>
               <div class="model-sizes"><span>1.7B</span><span>0.6B</span></div>
             </div>
-            <p class="desc">高质量多语言语音克隆，自然韵律。唯一支持传递指令的引擎——使用自然语言控制语调、节奏和情感。</p>
+            <p class="desc">高质量多语言语音克隆，自然韵律。支持用自然语言传递指令，控制语调、节奏和情感。</p>
             <div class="engine-tags">
               <span class="engine-tag" style="background:var(--blue-dim);color:var(--blue);">10 种语言</span>
               <span class="engine-tag" style="background:var(--accent-dim);color:var(--accent);">传递指令</span>
+            </div>
+          </div>
+          <div class="engine-card fade-up">
+            <div class="engine-card-header">
+              <div>
+                <h3>Qwen CustomVoice</h3>
+                <span class="by">by 阿里巴巴</span>
+              </div>
+            </div>
+            <p class="desc">9 种精选预设音色，无需参考音频即可开声。用自然语言控制语气的表达方式。</p>
+            <div class="engine-tags">
+              <span class="engine-tag" style="background:var(--blue-dim);color:var(--blue);">10 种语言</span>
+              <span class="engine-tag" style="background:var(--green-dim);color:var(--green);">9 种预设音色</span>
+            </div>
+          </div>
+          <div class="engine-card fade-up">
+            <div class="engine-card-header">
+              <div>
+                <h3>Qwen VoiceDesign</h3>
+                <span class="by">by 阿里巴巴</span>
+              </div>
+            </div>
+            <p class="desc">写一段描述就能造出一个声音——不需要参考音频，也不需要预设音色。适合为角色定制独一无二的声线。</p>
+            <div class="engine-tags">
+              <span class="engine-tag" style="background:var(--blue-dim);color:var(--blue);">10 种语言</span>
+              <span class="engine-tag" style="background:rgba(244,63,94,.12);color:#f43f5e;">文字造声</span>
             </div>
           </div>
           <div class="engine-card fade-up">
@@ -554,7 +601,21 @@
               <span class="engine-tag" style="background:var(--accent-dim);color:var(--accent);">48kHz 输出</span>
             </div>
           </div>
-          <div class="engine-card fade-up" style="grid-column: 1 / -1;">
+          <div class="engine-card fade-up">
+            <div class="engine-card-header">
+              <div>
+                <h3>Kokoro</h3>
+                <span class="by">by hexgrad</span>
+              </div>
+              <div class="model-sizes"><span>82M</span></div>
+            </div>
+            <p class="desc">微型但好用的预设音色引擎。50 种精选音色，82M 参数，CPU 推理也很快，适合快速草稿与批量生成。</p>
+            <div class="engine-tags">
+              <span class="engine-tag" style="background:var(--blue-dim);color:var(--blue);">8 种语言</span>
+              <span class="engine-tag" style="background:var(--green-dim);color:var(--green);">50 种预设音色</span>
+            </div>
+          </div>
+          <div class="engine-card fade-up">
             <div class="engine-card-header">
               <div>
                 <h3>TADA</h3>
@@ -627,7 +688,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
             Voicebox
           </div>
-          <p>开源语音克隆工作室。本地优先，永久免费。</p>
+          <p>开源 AI 语音工作室。克隆、生成、听写、智能体语音，全部本地优先，永久免费。</p>
         </div>
         <div class="footer-col">
           <h4>产品</h4>
@@ -644,7 +705,7 @@
         </div>
       </div>
       <div class="footer-bottom">
-        <span>MIT License · 2024</span>
+        <span>MIT License · 2026</span>
         <span>基于 Tauri (Rust) 构建</span>
       </div>
     </footer>
