@@ -1,13 +1,16 @@
 ---
 import "@fontsource-variable/space-grotesk";
 import "@fontsource-variable/dm-sans";
+import spaceGroteskLatin from "@fontsource-variable/space-grotesk/files/space-grotesk-latin-wght-normal.woff2?url";
 ---
 <!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
     <title>Voicebox | 开源 AI 语音工作室</title>
+    <link rel="preload" href={spaceGroteskLatin} as="font" type="font/woff2" crossorigin />
     <link rel="canonical" href="https://voicebox.ndjp.net/" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <meta property="og:type" content="website" />
@@ -31,6 +34,9 @@ import "@fontsource-variable/dm-sans";
       }
 
       :root {
+        color-scheme: dark;
+        accent-color: var(--accent);
+
         /* Studio console palette: deep acoustic obsidian + signal vermilion */
         --bg: #0b0d10;
         --bg-surface: #12151a;
@@ -61,9 +67,15 @@ import "@fontsource-variable/dm-sans";
       }
 
       html {
-        scroll-behavior: smooth;
+        scroll-padding-top: 84px;
         scrollbar-width: thin;
-        scrollbar-color: #2a303b var(--bg);
+        scrollbar-color: #525b6a var(--bg);
+      }
+
+      @media (prefers-reduced-motion: no-preference) {
+        html {
+          scroll-behavior: smooth;
+        }
       }
 
       body {
@@ -73,7 +85,7 @@ import "@fontsource-variable/dm-sans";
         background: var(--bg);
         color: var(--text);
         -webkit-font-smoothing: antialiased;
-        overflow-x: hidden;
+        overflow-x: clip;
       }
 
       h1,
@@ -82,6 +94,41 @@ import "@fontsource-variable/dm-sans";
         font-family: var(--font-display);
         font-weight: 600;
         letter-spacing: -0.025em;
+        text-wrap: balance;
+      }
+
+      .hero-sub,
+      .section-desc,
+      .cap-cell p,
+      .clone-row p,
+      .engine-desc,
+      .footer-brand p {
+        text-wrap: pretty;
+      }
+
+      .visually-hidden:where(:not(:focus-within, :active)) {
+        position: absolute !important;
+        clip-path: inset(50%) !important;
+        overflow: hidden !important;
+        width: 1px !important;
+        height: 1px !important;
+        margin: -1px !important;
+        padding: 0 !important;
+        border: 0 !important;
+        white-space: nowrap !important;
+      }
+
+      .skip-link:focus-visible {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        z-index: 200;
+        padding: 10px 16px;
+        border-radius: var(--radius-sm);
+        background: var(--accent);
+        color: #0b0d10;
+        font-size: var(--text-sm);
+        font-weight: 600;
       }
 
       a {
@@ -117,15 +164,8 @@ import "@fontsource-variable/dm-sans";
         left: 0;
         right: 0;
         z-index: 100;
-        background: transparent;
-        border-bottom: 1px solid transparent;
-        transition: background-color 200ms var(--ease), border-color 200ms var(--ease), backdrop-filter 200ms var(--ease);
-      }
-
-      .nav.scrolled {
-        background: rgba(11, 13, 16, 0.84);
-        backdrop-filter: blur(16px) saturate(1.3);
-        border-bottom-color: var(--border);
+        background-color: var(--bg);
+        border-bottom: 1px solid var(--border);
       }
 
       .nav-inner {
@@ -229,38 +269,132 @@ import "@fontsource-variable/dm-sans";
       }
 
       .mobile-drawer {
-        display: none;
-        position: fixed;
-        top: 68px;
-        left: 0;
-        right: 0;
-        z-index: 99;
-        background: rgba(11, 13, 16, 0.96);
-        backdrop-filter: blur(18px);
-        border-bottom: 1px solid var(--border);
-        padding: 16px 24px 24px;
+        --drawer-width: min(20rem, 82dvw, 100dvw - 24px);
+        --drawer-backdrop: 0;
+        inset: 0;
+        width: auto;
+        height: auto;
+        max-width: none;
+        max-height: none;
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        border: 0;
+        overflow: visible;
+        color: var(--text);
       }
 
-      .mobile-drawer.open {
-        display: block;
+      .mobile-drawer::backdrop {
+        background: #000;
+        opacity: calc(var(--drawer-backdrop) * 0.6);
+      }
+
+      .mobile-drawer-scroller {
+        position: relative;
+        display: grid;
+        grid-template-columns: var(--drawer-width) 100%;
+        overflow-x: scroll;
+        overscroll-behavior: none;
+        scrollbar-width: none;
+        scroll-snap-type: x mandatory;
+      }
+
+      @media (prefers-reduced-motion: no-preference) {
+        .mobile-drawer-scroller {
+          scroll-behavior: smooth;
+        }
+      }
+
+      .mobile-drawer-scroller::after {
+        content: "";
+        scroll-snap-align: end;
+        scroll-initial-target: nearest;
+      }
+
+      .mobile-drawer-sheet {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        height: 100svh;
+        background: var(--bg-surface);
+        border-right: 1px solid var(--border-strong);
+        padding: 18px 24px 28px;
+        overflow-y: auto;
+        scroll-snap-align: start;
+        scrollbar-width: none;
+      }
+
+      .mobile-drawer-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-bottom: 16px;
+        margin-bottom: 8px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .mobile-drawer-close {
+        width: 38px;
+        height: 38px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: none;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        color: var(--text);
+        cursor: pointer;
       }
 
       .mobile-drawer-links {
+        list-style: none;
         display: flex;
         flex-direction: column;
         gap: 4px;
       }
 
       .mobile-drawer-links a {
-        padding: 12px 0;
+        display: block;
+        padding: 13px 0;
         font-size: var(--text-body);
         font-weight: 500;
         color: var(--text-secondary);
         border-bottom: 1px solid var(--border);
+        transition: color 160ms var(--ease);
       }
 
-      .mobile-drawer-links a:last-child {
+      .mobile-drawer-links a:hover {
+        color: var(--text);
+      }
+
+      .mobile-drawer-links li:last-child a {
         border-bottom: none;
+      }
+
+      @supports (animation-timeline: scroll()) {
+        .mobile-drawer {
+          timeline-scope: --drawer-fade;
+          animation: fade-drawer-backdrop linear both;
+          animation-timeline: --drawer-fade;
+        }
+
+        .mobile-drawer-scroller {
+          scroll-timeline: --drawer-fade x;
+        }
+
+        @property --drawer-backdrop {
+          syntax: "<number>";
+          inherits: true;
+          initial-value: 0;
+        }
+
+        @keyframes fade-drawer-backdrop {
+          0% {
+            --drawer-backdrop: 1;
+          }
+          100% {
+            --drawer-backdrop: 0;
+          }
+        }
       }
 
       @media (max-width: 768px) {
@@ -352,6 +486,7 @@ import "@fontsource-variable/dm-sans";
       .workbench {
         position: relative;
         z-index: 1;
+        contain: layout style paint;
         border-radius: var(--radius-lg);
         border: 1px solid var(--border-strong);
         background: var(--bg-surface);
@@ -762,6 +897,13 @@ import "@fontsource-variable/dm-sans";
       /* ---- SECTIONS ---- */
       .section {
         padding: 104px 0;
+        content-visibility: auto;
+        contain-intrinsic-size: auto none auto 42rem;
+      }
+
+      .footer {
+        content-visibility: auto;
+        contain-intrinsic-size: auto none auto 16rem;
       }
 
       .section-rule {
@@ -1066,7 +1208,7 @@ import "@fontsource-variable/dm-sans";
       .footer-inner {
         display: flex;
         flex-wrap: wrap;
-        align-items: flex-start;
+        align-items: center;
         justify-content: space-between;
         gap: 32px;
       }
@@ -1126,6 +1268,8 @@ import "@fontsource-variable/dm-sans";
     </style>
   </head>
   <body>
+    <a href="#main-content" class="skip-link visually-hidden">跳到正文</a>
+
     <header class="nav" id="siteNav">
       <div class="container nav-inner">
         <a href="#" class="nav-logo">
@@ -1162,8 +1306,9 @@ import "@fontsource-variable/dm-sans";
             id="mobileMenuBtn"
             aria-label="打开菜单"
             aria-expanded="false"
+            aria-controls="mobileDrawer"
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <line x1="3" y1="6" x2="21" y2="6" />
               <line x1="3" y1="12" x2="21" y2="12" />
               <line x1="3" y1="18" x2="21" y2="18" />
@@ -1173,18 +1318,40 @@ import "@fontsource-variable/dm-sans";
       </div>
     </header>
 
-    <div class="mobile-drawer" id="mobileDrawer" aria-label="移动端导航">
-      <div class="mobile-drawer-links">
-        <a href="#features">核心功能</a>
-        <a href="#cloning">声音克隆</a>
-        <a href="#engines">本地引擎</a>
-        <a href="/docs/">文档</a>
-        <a href="#download">下载客户端</a>
-        <a href="https://github.com/jamiepine/voicebox" target="_blank" rel="noopener noreferrer">GitHub 仓库</a>
+    <dialog class="mobile-drawer" id="mobileDrawer" aria-label="移动端导航">
+      <div class="mobile-drawer-scroller">
+        <nav class="mobile-drawer-sheet" aria-label="移动端导航链接">
+          <div class="mobile-drawer-head">
+            <span class="nav-logo">
+              <span class="nav-logo-mark" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" x2="12" y1="19" y2="22" />
+                </svg>
+              </span>
+              Voicebox
+            </span>
+            <button type="button" class="mobile-drawer-close" id="mobileDrawerClose" aria-label="关闭菜单" autofocus>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <ul class="mobile-drawer-links">
+            <li><a href="#features">核心功能</a></li>
+            <li><a href="#cloning">声音克隆</a></li>
+            <li><a href="#engines">本地引擎</a></li>
+            <li><a href="/docs/">文档</a></li>
+            <li><a href="#download">下载客户端</a></li>
+            <li><a href="https://github.com/jamiepine/voicebox" target="_blank" rel="noopener noreferrer">GitHub 仓库</a></li>
+          </ul>
+        </nav>
       </div>
-    </div>
+    </dialog>
 
-    <main>
+    <main id="main-content" tabindex="-1">
       <!-- HERO -->
       <section class="hero">
         <div class="hero-grid-bg" aria-hidden="true"></div>
@@ -1196,7 +1363,7 @@ import "@fontsource-variable/dm-sans";
             </p>
             <div class="hero-cta-wrap">
               <a href="#download" class="btn-primary">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                   <polyline points="7 10 12 15 17 10" />
                   <line x1="12" x2="12" y1="15" y2="3" />
@@ -1208,7 +1375,7 @@ import "@fontsource-variable/dm-sans";
           </div>
 
           <!-- INTERACTIVE STUDIO WORKBENCH -->
-          <div class="workbench" id="studioWorkbench" aria-label="Voicebox 交互式工作台预览">
+          <div class="workbench" id="studioWorkbench" role="region" aria-label="Voicebox 交互式工作台预览">
             <div class="wb-bar">
               <div class="wb-dots" aria-hidden="true">
                 <span class="wb-dot rec"></span>
@@ -1324,7 +1491,7 @@ import "@fontsource-variable/dm-sans";
                 <div class="gen-list">
                   <div class="gen-row">
                     <button type="button" class="gen-play" data-clip="Morgan Freeman" data-duration="8" aria-label="播放 Morgan Freeman 示例">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3" /></svg>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3" /></svg>
                     </button>
                     <div class="gen-meta">
                       <div class="gen-head">
@@ -1336,7 +1503,7 @@ import "@fontsource-variable/dm-sans";
                   </div>
                   <div class="gen-row">
                     <button type="button" class="gen-play" data-clip="Jarvis" data-duration="9" aria-label="播放 Jarvis 示例">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3" /></svg>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3" /></svg>
                     </button>
                     <div class="gen-meta">
                       <div class="gen-head">
@@ -1348,7 +1515,7 @@ import "@fontsource-variable/dm-sans";
                   </div>
                   <div class="gen-row">
                     <button type="button" class="gen-play" data-clip="Bob Ross" data-duration="6" aria-label="播放 Bob Ross 示例">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3" /></svg>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3" /></svg>
                     </button>
                     <div class="gen-meta">
                       <div class="gen-head">
@@ -1360,7 +1527,7 @@ import "@fontsource-variable/dm-sans";
                   </div>
                   <div class="gen-row">
                     <button type="button" class="gen-play" data-clip="Linus Tech Tips" data-duration="5" aria-label="播放 Linus Tech Tips 示例">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3" /></svg>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3" /></svg>
                     </button>
                     <div class="gen-meta">
                       <div class="gen-head">
@@ -1376,7 +1543,7 @@ import "@fontsource-variable/dm-sans";
 
             <div class="wb-transport">
               <button type="button" class="gen-play" id="transportPlay" aria-label="播放或暂停当前音轨">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3" /></svg>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3" /></svg>
               </button>
               <span class="transport-speaker" id="transportSpeaker">Jarvis</span>
               <div class="wave-wrap" id="waveBars" aria-hidden="true"></div>
@@ -1387,7 +1554,7 @@ import "@fontsource-variable/dm-sans";
       </section>
 
       <!-- VOICE STRIP -->
-      <div class="voice-strip" aria-label="内置与示例声线">
+      <div class="voice-strip" role="region" aria-label="内置与示例声线">
         <div class="marquee-track" id="marqueeTrack"></div>
       </div>
 
@@ -1715,7 +1882,7 @@ import "@fontsource-variable/dm-sans";
                   <span class="dl-name">macOS Apple Silicon (ARM)</span>
                   <span class="dl-detail">推荐 · 原生 MLX 与 Metal 加速</span>
                 </span>
-                <svg class="dl-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg class="dl-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               </a>
@@ -1735,7 +1902,7 @@ import "@fontsource-variable/dm-sans";
                   <span class="dl-name">macOS Intel (x64)</span>
                   <span class="dl-detail">适用于 Intel 处理器 Mac</span>
                 </span>
-                <svg class="dl-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg class="dl-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               </a>
@@ -1755,7 +1922,7 @@ import "@fontsource-variable/dm-sans";
                   <span class="dl-name">Windows 64 位 (MSI)</span>
                   <span class="dl-detail">支持 NVIDIA CUDA 与 DirectML</span>
                 </span>
-                <svg class="dl-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg class="dl-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               </a>
@@ -1774,7 +1941,7 @@ import "@fontsource-variable/dm-sans";
                   <span class="dl-name">Linux 源码与 Docker</span>
                   <span class="dl-detail">查看安装文档以从源码或容器构建</span>
                 </span>
-                <svg class="dl-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg class="dl-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               </a>
@@ -1815,6 +1982,7 @@ import "@fontsource-variable/dm-sans";
       </div>
     </footer>
 
-    <script is:inline src="/landing.js"></script>
+    <div id="liveAnnouncer" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
+    <script is:inline defer src="/landing.js"></script>
   </body>
 </html>

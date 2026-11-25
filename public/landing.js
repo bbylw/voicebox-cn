@@ -1,29 +1,90 @@
 (() => {
   const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  // 1. Header scroll surface separation
-  const nav = document.getElementById("siteNav");
-  const syncNav = () => {
-    if (!nav) return;
-    nav.classList.toggle("scrolled", window.scrollY > 16);
+  const announcer = document.getElementById("liveAnnouncer");
+  const announce = (msg) => {
+    if (!announcer) return;
+    announcer.textContent = "";
+    requestAnimationFrame(() => {
+      announcer.textContent = msg;
+    });
   };
-  syncNav();
-  window.addEventListener("scroll", syncNav, { passive: true });
 
-  // 2. Mobile drawer toggle
+  // 1. Native <dialog> navigation drawer with scroll-snap swipe-to-dismiss
   const menuBtn = document.getElementById("mobileMenuBtn");
   const drawer = document.getElementById("mobileDrawer");
-  if (menuBtn && drawer) {
-    menuBtn.addEventListener("click", () => {
-      const open = drawer.classList.toggle("open");
-      menuBtn.setAttribute("aria-expanded", String(open));
-    });
-    drawer.querySelectorAll("a").forEach((link) => {
-      link.addEventListener("click", () => {
-        drawer.classList.remove("open");
+  if (menuBtn && drawer instanceof HTMLDialogElement) {
+    const scroller = drawer.querySelector(".mobile-drawer-scroller");
+    const sheet = drawer.querySelector(".mobile-drawer-sheet");
+    const closeBtn = document.getElementById("mobileDrawerClose");
+
+    if (scroller && sheet) {
+      const openDrawer = async () => {
+        drawer.showModal();
+        if (!CSS.supports("scroll-initial-target", "nearest")) {
+          scroller.scrollTo({ left: scroller.offsetWidth, behavior: "instant" });
+          await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        }
+        scroller.scrollTo({ left: 0, behavior: "auto" });
+      };
+
+      const closeDrawer = () => {
+        if (!drawer.open) return;
+        scroller.scrollTo({ left: scroller.offsetWidth, behavior: "auto" });
+      };
+
+      const visibleThreshold = 1 / Math.max(window.innerWidth, 1);
+      const observer = new IntersectionObserver(
+        (entries) => {
+          const entry = entries.at(-1);
+          if (!entry || !drawer.open) return;
+          if (entry.intersectionRatio < visibleThreshold) {
+            drawer.close();
+            menuBtn.setAttribute("aria-expanded", "false");
+          } else if (entry.intersectionRatio === 1) {
+            menuBtn.setAttribute("aria-expanded", "true");
+          }
+        },
+        { root: drawer, threshold: [visibleThreshold, 1] },
+      );
+      observer.observe(sheet);
+
+      if (!CSS.supports("animation-timeline: scroll()")) {
+        scroller.addEventListener(
+          "scroll",
+          () => {
+            const width = sheet.offsetWidth || 1;
+            const ratio = Math.max(0, Math.min(1, 1 - scroller.scrollLeft / width));
+            drawer.style.setProperty("--drawer-backdrop", String(ratio));
+          },
+          { passive: true },
+        );
+      }
+
+      menuBtn.addEventListener("click", openDrawer);
+      if (closeBtn) closeBtn.addEventListener("click", closeDrawer);
+
+      drawer.addEventListener("click", (event) => {
+        if (!sheet.contains(event.target)) closeDrawer();
+      });
+
+      drawer.addEventListener("cancel", (event) => {
+        if (event.cancelable) {
+          event.preventDefault();
+          closeDrawer();
+        }
+      });
+
+      drawer.addEventListener("close", () => {
         menuBtn.setAttribute("aria-expanded", "false");
       });
-    });
+
+      drawer.querySelectorAll("a").forEach((link) => {
+        link.addEventListener("click", () => {
+          drawer.close();
+          menuBtn.setAttribute("aria-expanded", "false");
+        });
+      });
+    }
   }
 
   // 3. Waveform bars & interactive studio transport
@@ -44,8 +105,8 @@
   const transportPlay = document.getElementById("transportPlay");
   const transportSpeaker = document.getElementById("transportSpeaker");
   const transportTime = document.getElementById("transportTime");
-  const playIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3" /></svg>';
-  const pauseIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>';
+  const playIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3" /></svg>';
+  const pauseIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>';
 
   let isPlaying = false;
   let durationSec = 9;
@@ -146,6 +207,7 @@
       activeClipBtn = null;
       elapsedSec = 0;
       stopPlayback();
+      announce(`已切换声音配置：${name}`);
     });
   });
 
@@ -160,6 +222,7 @@
       const note = btn.getAttribute("data-note");
       if (wbEngineStatus && engine) wbEngineStatus.textContent = engine;
       if (wbEngineNote && note) wbEngineNote.textContent = note;
+      if (engine) announce(`已切换本地引擎：${engine}`);
     });
   });
 
@@ -172,10 +235,14 @@
         engineFilter.querySelectorAll(".seg-btn").forEach((b) => b.setAttribute("aria-pressed", "false"));
         btn.setAttribute("aria-pressed", "true");
         const filter = btn.getAttribute("data-filter") || "all";
+        let visibleCount = 0;
         engineRows.forEach((row) => {
           const cats = (row.getAttribute("data-category") || "").split(" ");
-          row.hidden = filter !== "all" && !cats.includes(filter);
+          const hidden = filter !== "all" && !cats.includes(filter);
+          row.hidden = hidden;
+          if (!hidden) visibleCount += 1;
         });
+        announce(`已筛选引擎：显示 ${visibleCount} 个引擎`);
       });
     });
   }
